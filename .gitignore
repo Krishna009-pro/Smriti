@@ -1,0 +1,62 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+ENV/
+env/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.tox/
+*.egg-info/
+dist/
+build/
+ai/dist/
+ai/build/
+ai/*.egg-info/
+
+# Node / Frontend
+node_modules/
+.next/
+out/
+.docusaurus/
+.cache/
+.serverless/
+.fusebox/
+.dynamodb/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Database & IDE
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.swo
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Environment / Secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.backup
+.env.*.local
