@@ -1,0 +1,19 @@
+[
+  {
+    "id": "edge-has-fix-102-sample",
+    "source_id": "P-102",
+    "target_id": "FIX-102",
+    "relation_type": "has_known_fix",
+    "symptom_description": "Mechanical seal leaking / pressure drops by 18%",
+    "telemetry_signature": {
+      "metric": "pressure",
+      "condition": "drop_pct > 15"
+    },
+    "positive_feedback": 1,
+    "negative_feedback": 0,
+    "confidence": 0.5,
+    "is_compliance_relevant": 1,
+    "source_excerpt": "Pump seal leaking, pressure dropping. Checked seal alignment and tightened gland nuts.",
+    "source_type": "shift_note"
+  }
+]

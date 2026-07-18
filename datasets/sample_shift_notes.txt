@@ -1,0 +1,7 @@
+--- SHIFT NOTE: 2026-07-18 08:00 ---
+Location: Area A, Pump P-102
+Technician: Arjun
+Observation: Noticed high seal temperature and pressure dropping by 18% over a 10-minute span. Mechanical seal vibration threshold exceeded.
+Action: Recalled Meera's past recommendation. Checked seal alignment and tightened gland nuts. Pressure stabilized, leak stopped.
+Notes: Seal replacement (Silicon-Seal-V2) may be needed on next planned outage if vibration continues.
+---

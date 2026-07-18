@@ -1,0 +1,51 @@
+{
+  "nodes": [
+    {
+      "id": "TK-101",
+      "type": "equipment",
+      "name": "Feed Storage Tank TK-101",
+      "properties": {
+        "manufacturer": "Tata Steel",
+        "capacity_m3": 100,
+        "fluid": "Water/Process Slurry"
+      }
+    },
+    {
+      "id": "P-102",
+      "type": "equipment",
+      "name": "Feed Pump P-102",
+      "properties": {
+        "manufacturer": "Sulzer",
+        "power_kw": 45,
+        "flow_rate_m3h": 150
+      }
+    },
+    {
+      "id": "VLV-102a",
+      "type": "equipment",
+      "name": "Isolation Valve VLV-102a",
+      "properties": {
+        "valve_type": "Ball Valve",
+        "size_inches": 6
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-tk-to-valve",
+      "source_id": "TK-101",
+      "target_id": "VLV-102a",
+      "relation_type": "connects_to",
+      "flow_direction": "downstream",
+      "source_type": "pid"
+    },
+    {
+      "id": "edge-valve-to-pump",
+      "source_id": "VLV-102a",
+      "target_id": "P-102",
+      "relation_type": "connects_to",
+      "flow_direction": "downstream",
+      "source_type": "pid"
+    }
+  ]
+}
