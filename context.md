@@ -54,9 +54,14 @@ This document summarizes the current state, modifications, and system architectu
 * When a technician upvotes or downvotes a remedy on the dashboard, the system updates positive/negative feedback tallies and recalculates the Wilson lower bound confidence score.
 * Changes are re-embedded and synchronized with the sqlite-vec virtual table.
 
+### 4. Multimodal Camera Ingestion (Image Upload)
+* **Telegram:** Technicians can send a photo of a nameplate or piece of equipment to the bot. It automatically calls Gemini 2.5 Flash Vision to parse the image, extract the equipment tag, query its RAG troubleshooting steps, and reply on their phone.
+* **Web UI Dashboard:** Added a camera upload icon (`📷`) to the floating Chat Copilot drawer. Uploading an image parses the tag, runs RAG, and automatically shifts the active dashboard trace to show that equipment's live topology graph!
+
 ---
 
 ## 4. Suggested Next Steps for Claude 3.5 Sonnet
 1. **Frontend Styling Polish:** Upgrade `frontend/src/app/page.tsx` with premium dark-mode styling, smooth animations, and glassmorphic UI components.
 2. **Interactive SVG Topology Graph:** Add hover-states, animations, and node detail flyouts for P&ID equipment tags and connection lines.
-3. **Hackathon Pitch & Slide Deck:** Create a slide structure or pitch script summarizing the core features (Ingestion, Mobile RAG, Local-second resilience, Watcher, Self-learning loop).
+3. **Voice-to-Text Command Interface (Audio):** Add voice message transcription (Whisper/Gemini) to the Telegram listener.
+4. **Hackathon Pitch & Slide Deck:** Create a slide structure or pitch script summarizing the core features (Ingestion, Vision RAG, Local-second resilience, Watcher, Self-learning loop).
