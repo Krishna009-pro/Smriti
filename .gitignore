@@ -60,3 +60,6 @@ Desktop.ini
 .env.production.local
 .env.backup
 .env.*.local
+
+# Temp Ingest Uploads
+datasets/temp_uploads/

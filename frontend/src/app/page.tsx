@@ -435,7 +435,7 @@ export default function Dashboard() {
                     }
                   }}
                   className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs w-full text-gray-400 focus:outline-none file:bg-gray-800 file:border-0 file:text-white file:text-xs file:px-2 file:py-1 file:mr-2 file:rounded file:cursor-pointer"
-                  accept=".pdf,.txt,.png,.jpg,.jpeg"
+                  accept=".pdf,.txt,.png,.jpg,.jpeg,.csv,.xlsx,.xls"
                 />
               </div>
               <button 
