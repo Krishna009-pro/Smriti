@@ -62,6 +62,10 @@ This document summarizes the current state, modifications, and system architectu
 * **Multi-Format Upload:** Built a new **"Document Ingestion Hub"** panel on the web dashboard sidebar. Users can upload custom PDFs, scanned forms, emails, or spreadsheets.
 * **Extraction Processing:** Uploaded documents are saved, parsed dynamically by the Gemini 2.5 Flash pipeline (bypassing seed caches), verified by schema validators, and injected directly into the live relational and sqlite-vec vector database.
 
+### 6. Interactive Compliance PDF Exporter
+* **PDF Generation Engine:** Built [compliance_service.py](file:///c:/Users/kkp18/OneDrive/Pictures/Documents/Smriti/backend/services/compliance_service.py) using `reportlab` generating beautiful, highly formatted PDF reports of equipment details, physical topology connections, and safety remedy tables with confidence statistics.
+* **Web UI Button:** Placed a **"Export Compliance Audit PDF"** button under the Health KPIs card on the dashboard, streaming the generated PDF directly to the browser for download.
+
 ---
 
 ## 4. Suggested Next Steps for Claude 3.5 Sonnet
