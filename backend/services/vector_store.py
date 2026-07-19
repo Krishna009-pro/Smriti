@@ -60,8 +60,9 @@ def upsert_edge_embedding(edge_id: str, embedding: np.ndarray) -> None:
         conn.enable_load_extension(False)
 
         blob = _serialize_vec(embedding)
+        conn.execute(f"DELETE FROM {VEC_TABLE} WHERE edge_id = ?", (edge_id,))
         conn.execute(
-            f"INSERT OR REPLACE INTO {VEC_TABLE} (edge_id, embedding) VALUES (?, ?)",
+            f"INSERT INTO {VEC_TABLE} (edge_id, embedding) VALUES (?, ?)",
             (edge_id, blob)
         )
         conn.commit()
