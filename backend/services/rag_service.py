@@ -1,4 +1,5 @@
 """Retrieval-Augmented Generation for troubleshooting queries in Cloud-First, Local-Second format."""
+import base64
 from typing import Optional
 import httpx
 from sqlalchemy.orm import Session
@@ -164,3 +165,48 @@ def sync_edge_embeddings(db: Session) -> int:
             count += 1
 
     return count
+
+async def extract_equipment_from_image(image_bytes: bytes) -> Optional[str]:
+    """Identify any refinery or industrial equipment tag in an image using Gemini 2.5 Flash."""
+    if not settings.gemini_api_key:
+        return None
+    try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={settings.gemini_api_key}"
+        prompt = (
+            "Identify any refinery or industrial equipment tag or ID in this image "
+            "(e.g., P-102, V-101, V-102, Valve-101). "
+            "Respond with ONLY the equipment tag name as a plain string (e.g. 'P-102'), "
+            "or respond with 'NONE' if no tag is identified. Do not include markdown formatting or extra text."
+        )
+        
+        # Base64 encode the image
+        img_b64 = base64.b64encode(image_bytes).decode("utf-8")
+        
+        payload = {
+            "contents": [{
+                "parts": [
+                    {"text": prompt},
+                    {
+                        "inline_data": {
+                            "mime_type": "image/jpeg",
+                            "data": img_b64
+                        }
+                    }
+                ]
+            }]
+        }
+        
+        headers = {"Content-Type": "application/json"}
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(url, json=payload, headers=headers, timeout=15.0)
+            if resp.status_code == 200:
+                data = resp.json()
+                text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                # Clean up formatting
+                text = text.replace("`", "").strip()
+                if text == "NONE" or not text:
+                    return None
+                return text
+    except Exception as e:
+        print(f"[-] Image equipment extraction failed: {e}")
+    return None

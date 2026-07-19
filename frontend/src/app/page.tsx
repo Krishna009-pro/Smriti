@@ -175,6 +175,40 @@ export default function Dashboard() {
     }
   };
 
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const file = files[0];
+    setChatMessages((prev) => [...prev, { sender: "user", text: `📷 Uploaded photo: ${file.name}` }]);
+    setChatLoading(true);
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const res = await fetch(`${API_BASE}/api/chat/vision`, {
+        method: "POST",
+        body: formData,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setChatMessages((prev) => [...prev, { sender: "ai", text: data.response }]);
+        if (data.identified && data.equipment_id) {
+          fetchGraphData(data.equipment_id);
+          setSearchQuery(data.equipment_id);
+        }
+      } else {
+        setChatMessages((prev) => [...prev, { sender: "ai", text: "Error: Failed to process nameplate image." }]);
+      }
+    } catch (err) {
+      setChatMessages((prev) => [...prev, { sender: "ai", text: "Error: Connection lost during image upload." }]);
+    } finally {
+      setChatLoading(false);
+      e.target.value = "";
+    }
+  };
+
   // Telemetry Simulation Trigger
   const triggerSimulation = async () => {
     try {
@@ -620,12 +654,25 @@ export default function Dashboard() {
               )}
             </div>
             {/* Input Form */}
-            <form onSubmit={sendChatMessage} className="p-3 bg-gray-950 border-t border-gray-800 flex gap-2">
+            <form onSubmit={sendChatMessage} className="p-3 bg-gray-950 border-t border-gray-800 flex gap-2 items-center">
+              <label 
+                className="bg-gray-800 hover:bg-gray-700 text-white p-2 rounded cursor-pointer transition flex items-center justify-center text-sm w-9 h-9"
+                title="Upload nameplate photo"
+              >
+                <span>📷</span>
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  onChange={handleImageUpload} 
+                  className="hidden" 
+                  disabled={chatLoading}
+                />
+              </label>
               <input 
                 type="text"
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
-                placeholder="Ask about equipment or failure..."
+                placeholder="Ask or upload photo..."
                 className="flex-1 bg-gray-900 border border-gray-750 text-white placeholder-gray-500 text-xs px-3 py-2 rounded focus:outline-none focus:border-blue-500"
               />
               <button 

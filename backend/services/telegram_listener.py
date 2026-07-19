@@ -41,30 +41,69 @@ async def start_telegram_listener(session_factory: sessionmaker):
                 for update in result:
                     last_update_id = update["update_id"]
                     message = update.get("message")
-                    if not message or "text" not in message:
+                    if not message or ("text" not in message and "photo" not in message):
                         continue
 
                     chat_id = message["chat"]["id"]
-                    user_text = message["text"]
+                    reply = ""
 
-                    # Process command or query
-                    if user_text.strip() == "/start":
-                        reply = (
-                            "👋 **Welcome to Smriti AI Mobile Copilot!**\n\n"
-                            "Ask me troubleshooting or procedure questions about any plant equipment.\n"
-                            "• Example: *P-102 pressure drops, what should I check?*"
-                        )
-                    else:
-                        # Instantiate session to query DB
-                        db = session_factory()
+                    if "photo" in message:
+                        # Fetch photo file path and download
+                        photo = message["photo"]
+                        largest_photo = photo[-1]
+                        file_id = largest_photo["file_id"]
+                        
+                        file_url = f"https://api.telegram.org/bot{bot_token}/getFile"
                         try:
-                            # Run local-second RAG pipeline
-                            rag_res = await retrieve_and_answer(db, user_text)
-                            reply = rag_res["answer"]
-                        except Exception as ex:
-                            reply = f"Error processing query: {ex}"
-                        finally:
-                            db.close()
+                            file_resp = await client.get(file_url, params={"file_id": file_id})
+                            if file_resp.status_code == 200:
+                                file_path = file_resp.json().get("result", {}).get("file_path")
+                                if file_path:
+                                    download_url = f"https://api.telegram.org/file/bot{bot_token}/{file_path}"
+                                    img_resp = await client.get(download_url)
+                                    if img_resp.status_code == 200:
+                                        from backend.services.rag_service import extract_equipment_from_image
+                                        eq_id = await extract_equipment_from_image(img_resp.content)
+                                        if eq_id:
+                                            db = session_factory()
+                                            try:
+                                                rag_res = await retrieve_and_answer(db, f"How do we fix {eq_id}?")
+                                                reply = (
+                                                    f"📸 **Identified Equipment:** `{eq_id}` from photo\n\n"
+                                                    f"{rag_res['answer']}"
+                                                )
+                                            except Exception as ex:
+                                                reply = f"Error processing query for {eq_id}: {ex}"
+                                            finally:
+                                                db.close()
+                                        else:
+                                            reply = "🔍 I inspected the photo but couldn't find a clear equipment tag like P-102 or V-101."
+                                    else:
+                                        reply = "Error: Failed to download the image file from Telegram."
+                                else:
+                                    reply = "Error: File path not found in Telegram metadata."
+                            else:
+                                reply = f"Error: Failed to retrieve file details from Telegram API (HTTP {file_resp.status_code})."
+                        except Exception as e:
+                            reply = f"Error during photo download: {e}"
+                    else:
+                        user_text = message["text"]
+                        if user_text.strip() == "/start":
+                            reply = (
+                                "👋 **Welcome to Smriti AI Mobile Copilot!**\n\n"
+                                "Ask me troubleshooting or procedure questions about any plant equipment.\n"
+                                "• Example: *P-102 pressure drops, what should I check?*\n"
+                                "• Or take/send a photo of any equipment tag nameplate!"
+                            )
+                        else:
+                            db = session_factory()
+                            try:
+                                rag_res = await retrieve_and_answer(db, user_text)
+                                reply = rag_res["answer"]
+                            except Exception as ex:
+                                reply = f"Error processing query: {ex}"
+                            finally:
+                                db.close()
 
                     # Send reply back to Telegram
                     send_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
@@ -77,7 +116,9 @@ async def start_telegram_listener(session_factory: sessionmaker):
         except asyncio.CancelledError:
             break
         except Exception as e:
+            import traceback
             print(f"[-] Telegram listener polling error: {e}")
+            traceback.print_exc()
             await asyncio.sleep(5)
         
         await asyncio.sleep(1)

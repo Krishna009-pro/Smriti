@@ -99,3 +99,20 @@ def test_chat_endpoint():
     res_data = response.json()
     assert "response" in res_data
     assert "P-102" in res_data["response"]
+
+def test_chat_vision_endpoint(monkeypatch):
+    client = TestClient(app)
+    
+    async def mock_extract(*args, **kwargs):
+        return "P-102"
+        
+    monkeypatch.setattr("backend.services.rag_service.extract_equipment_from_image", mock_extract)
+    
+    files = {"file": ("nameplate.jpg", b"fake_image_bytes", "image/jpeg")}
+    response = client.post("/api/chat/vision", files=files)
+    
+    assert response.status_code == 200
+    res_data = response.json()
+    assert res_data["identified"] is True
+    assert res_data["equipment_id"] == "P-102"
+    assert "P-102" in res_data["response"]

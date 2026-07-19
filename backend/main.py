@@ -1,6 +1,6 @@
 import asyncio
 from datetime import datetime
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from typing import Dict, Any, List
@@ -301,6 +301,37 @@ async def chat_with_copilot(request: ChatRequest, db: Session = Depends(get_db))
         db, request.message, request.equipment_id, top_k=5
     )
     return {"response": result["answer"]}
+
+@app.post("/api/chat/vision")
+async def chat_with_vision(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """
+    Accepts an uploaded equipment photo, extracts the equipment tag, and performs RAG.
+    """
+    try:
+        from backend.services.rag_service import extract_equipment_from_image, retrieve_and_answer
+        image_bytes = await file.read()
+        
+        # 1. Identify tag in the photo
+        eq_id = await extract_equipment_from_image(image_bytes)
+        if not eq_id:
+            return {
+                "identified": False,
+                "equipment_id": None,
+                "response": "🔍 I inspected the photo but couldn't find a clear equipment tag like P-102 or V-101."
+            }
+            
+        # 2. Run RAG query for that tag
+        result = await retrieve_and_answer(db, f"How do we fix {eq_id}?")
+        return {
+            "identified": True,
+            "equipment_id": eq_id,
+            "response": f"📸 **Identified Equipment:** `{eq_id}`\n\n{result['answer']}"
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to process image: {str(e)}"
+        )
 
 if __name__ == "__main__":
     import uvicorn
