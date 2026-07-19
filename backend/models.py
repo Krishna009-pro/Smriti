@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 # --- Node Schemas ---
 class NodeBase(BaseModel):
@@ -87,6 +87,7 @@ class GraphTraceResult(BaseModel):
 # --- AI Chat Copilot Schemas ---
 class ChatRequest(BaseModel):
     message: str
+    equipment_id: Optional[str] = None
 
 class ChatResponse(BaseModel):
     response: str

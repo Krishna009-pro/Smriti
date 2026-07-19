@@ -331,6 +331,23 @@ class IngestionService:
                 )
                 edge.document_id = document.id
 
+            # Sync embedding for this experiential edge
+            try:
+                from backend.services.vector_store import upsert_edge_embedding
+                from backend.services.embeddings import embed_text
+                text_parts = []
+                if edge.symptom_description:
+                    text_parts.append(f"Symptom: {edge.symptom_description}")
+                if edge.source_excerpt:
+                    text_parts.append(f"Context: {edge.source_excerpt}")
+                if fix_node:
+                    text_parts.append(f"Fix: {fix_node.name}")
+                if text_parts:
+                    vec = embed_text(" | ".join(text_parts))
+                    upsert_edge_embedding(edge.id, vec)
+            except Exception as e:
+                logger.warning("Failed to seed vector embedding during edge ingestion: %s", e)
+
         return nodes_created, edges_created
 
     # ------------------------------------------------------------------

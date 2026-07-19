@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float, Boolean, JSON
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float, Boolean, JSON, LargeBinary
 from sqlalchemy.orm import relationship
 from backend.db.session import Base
 
@@ -82,6 +82,7 @@ class KnowledgeEdge(Base):
     source_excerpt = Column(String, nullable=True)
     source_type = Column(String, nullable=True)  # pid, shift_note, work_order, feedback
     document_id = Column(String, ForeignKey("documents.id", ondelete="SET NULL"), nullable=True)
+    embedding = Column(LargeBinary, nullable=True)
     
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

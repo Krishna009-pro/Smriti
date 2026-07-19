@@ -111,6 +111,25 @@ class GraphService:
         self.db.commit()
         self.db.refresh(edge)
         self.db.refresh(feedback_entry)
+
+        # Re-embed the edge after feedback updates
+        try:
+            from backend.services.vector_store import upsert_edge_embedding
+            from backend.services.embeddings import embed_text
+            if edge.relation_type == "has_known_fix":
+                text_parts = []
+                if edge.symptom_description:
+                    text_parts.append(f"Symptom: {edge.symptom_description}")
+                if edge.source_excerpt:
+                    text_parts.append(f"Context: {edge.source_excerpt}")
+                fix_node = self.db.query(KnowledgeNode).filter(KnowledgeNode.id == edge.target_id).first()
+                if fix_node:
+                    text_parts.append(f"Fix: {fix_node.name}")
+                if text_parts:
+                    vec = embed_text(" | ".join(text_parts))
+                    upsert_edge_embedding(edge.id, vec)
+        except Exception as e:
+            print(f"[-] Vector embed failed during feedback update: {e}")
         
         return {
             "success": True,

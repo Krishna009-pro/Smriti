@@ -133,7 +133,9 @@ export default function Dashboard() {
       const res1 = await fetch(`${API_BASE}/api/ingest/pid?file_path=dummy_pid.pdf`, { method: "POST" });
       const res2 = await fetch(`${API_BASE}/api/ingest/shift-notes?file_path=dummy_notes.txt`, { method: "POST" });
       if (res1.ok && res2.ok) {
-        setStatusMessage("Ingestion pipeline loaded successfully!");
+        // Sync vector store after updates
+        await fetch(`${API_BASE}/api/vector/sync`, { method: "POST" });
+        setStatusMessage("Ingestion pipeline & Vector Store synced successfully!");
         fetchMetrics();
         fetchGraphData(activeEquipment);
       } else {
@@ -158,7 +160,7 @@ export default function Dashboard() {
       const res = await fetch(`${API_BASE}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userMsg }),
+        body: JSON.stringify({ message: userMsg, equipment_id: activeEquipment }),
       });
       if (res.ok) {
         const data = await res.json();

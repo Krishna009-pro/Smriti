@@ -50,6 +50,18 @@ app = FastAPI(
 @app.on_event("startup")
 async def startup_event():
     await watcher.start()
+    try:
+        from backend.services.vector_store import init_vector_store
+        from backend.services.rag_service import sync_edge_embeddings
+        from backend.db.session import SessionLocal
+        init_vector_store()
+        db = SessionLocal()
+        try:
+            sync_edge_embeddings(db)
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"[-] Vector startup indexing failed: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -232,13 +244,53 @@ def demo_engineer_only(current_user: User = Depends(RoleChecker(["engineer", "ma
         "role": current_user.role
     }
 
+from pydantic import BaseModel as PydanticBaseModel
+from typing import Optional as PydanticOptional
+
+class SemanticSearchRequest(PydanticBaseModel):
+    query: str
+    equipment_id: PydanticOptional[str] = None
+    top_k: int = 5
+
+@app.post("/api/search/semantic")
+async def semantic_search(request: SemanticSearchRequest, db: Session = Depends(get_db)):
+    """Vector similarity search over historical fixes."""
+    from backend.services.rag_service import retrieve_and_answer
+    result = await retrieve_and_answer(
+        db, request.query, request.equipment_id, request.top_k
+    )
+    return result
+
+@app.post("/api/chat/ask")
+async def chat_ask(request: ChatRequest, db: Session = Depends(get_db)):
+    """RAG-powered troubleshooting chat (Cloud-First, Local-Second)."""
+    from backend.services.rag_service import retrieve_and_answer
+    result = await retrieve_and_answer(
+        db, request.message, request.equipment_id, top_k=5
+    )
+    return {
+        "answer": result["answer"],
+        "retrieved_edges": result["retrieved_edges"],
+        "session_id": "web-session"
+    }
+
+@app.post("/api/vector/sync")
+def sync_vectors(db: Session = Depends(get_db)):
+    """Rebuild all edge embeddings (run after ingestion)."""
+    from backend.services.rag_service import sync_edge_embeddings
+    count = sync_edge_embeddings(db)
+    return {"status": "synced", "edges_embedded": count}
+
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat_with_copilot(request: ChatRequest, db: Session = Depends(get_db)) -> Dict[str, Any]:
     """
-    Conversational AI Copilot Chat Interface.
+    Conversational AI Copilot Chat Interface (Hybrid fallback).
     """
-    response_text = await ChatService(db).get_copilot_response(request.message)
-    return {"response": response_text}
+    from backend.services.rag_service import retrieve_and_answer
+    result = await retrieve_and_answer(
+        db, request.message, request.equipment_id, top_k=5
+    )
+    return {"response": result["answer"]}
 
 if __name__ == "__main__":
     import uvicorn

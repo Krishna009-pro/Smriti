@@ -36,6 +36,10 @@ def setup_db():
     session.add(fix102)
     session.add(edge)
     session.commit()
+    
+    # Sync edge embeddings for the vector store
+    from backend.services.rag_service import sync_edge_embeddings
+    sync_edge_embeddings(session)
     session.close()
 
     yield
