@@ -84,7 +84,7 @@ async def retrieve_and_answer(
     # 6. Cloud-First: Call Gemini API if key is available
     if settings.gemini_api_key:
         try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={settings.gemini_api_key}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={settings.gemini_api_key}"
             prompt = f"{RAG_SYSTEM_PROMPT}\n\nContext:\n{context}\n\nQuestion: {query}\nAnswer:"
             
             headers = {"Content-Type": "application/json"}

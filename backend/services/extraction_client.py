@@ -114,7 +114,7 @@ class ExtractionClient:
     def _call_gemini_vision(self, image_bytes: bytes) -> str:
         url = (
             "https://generativelanguage.googleapis.com/v1beta/models/"
-            f"gemini-1.5-flash:generateContent?key={self.api_key}"
+            f"gemini-2.5-flash:generateContent?key={self.api_key}"
         )
         payload = {
             "contents": [{
@@ -134,7 +134,7 @@ class ExtractionClient:
     def _call_gemini_text(self, text: str) -> str:
         url = (
             "https://generativelanguage.googleapis.com/v1beta/models/"
-            f"gemini-1.5-flash:generateContent?key={self.api_key}"
+            f"gemini-2.5-flash:generateContent?key={self.api_key}"
         )
         payload = {
             "contents": [{"parts": [{"text": f"{SHIFT_NOTE_SYSTEM_PROMPT}\n\nINPUT:\n{text}"}]}],

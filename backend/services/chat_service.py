@@ -45,7 +45,7 @@ class ChatService:
         # 3. If Gemini key is set, call Gemini API
         if settings.gemini_api_key:
             try:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={settings.gemini_api_key}"
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={settings.gemini_api_key}"
                 system_instruction = (
                     "You are 'Smriti Copilot', a helpful industrial assistant for refinery and plant operations. "
                     "Use the provided database context to answer the technician's question. "
