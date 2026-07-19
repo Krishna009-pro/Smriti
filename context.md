@@ -58,6 +58,10 @@ This document summarizes the current state, modifications, and system architectu
 * **Telegram:** Technicians can send a photo of a nameplate or piece of equipment to the bot. It automatically calls Gemini 2.5 Flash Vision to parse the image, extract the equipment tag, query its RAG troubleshooting steps, and reply on their phone.
 * **Web UI Dashboard:** Added a camera upload icon (`📷`) to the floating Chat Copilot drawer. Uploading an image parses the tag, runs RAG, and automatically shifts the active dashboard trace to show that equipment's live topology graph!
 
+### 5. Real-Time Document Ingestion Hub
+* **Multi-Format Upload:** Built a new **"Document Ingestion Hub"** panel on the web dashboard sidebar. Users can upload custom PDFs, scanned forms, emails, or spreadsheets.
+* **Extraction Processing:** Uploaded documents are saved, parsed dynamically by the Gemini 2.5 Flash pipeline (bypassing seed caches), verified by schema validators, and injected directly into the live relational and sqlite-vec vector database.
+
 ---
 
 ## 4. Suggested Next Steps for Claude 3.5 Sonnet
