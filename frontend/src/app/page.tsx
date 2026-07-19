@@ -66,6 +66,10 @@ export default function Dashboard() {
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
 
+  // Ingestion Hub States
+  const [ingestType, setIngestType] = useState<"pid" | "notes">("pid");
+  const [selectedIngestFile, setSelectedIngestFile] = useState<File | null>(null);
+
   // Fetch metrics and active graph topology
   const fetchMetrics = async () => {
     try {
@@ -206,6 +210,40 @@ export default function Dashboard() {
     } finally {
       setChatLoading(false);
       e.target.value = "";
+    }
+  };
+
+  const handleUploadIngest = async () => {
+    if (!selectedIngestFile) return;
+
+    setStatusMessage(`Uploading and processing document: ${selectedIngestFile.name}...`);
+    const formData = new FormData();
+    formData.append("file", selectedIngestFile);
+
+    const endpoint = ingestType === "pid" ? "pid" : "shift-notes";
+
+    try {
+      const res = await fetch(`${API_BASE}/api/ingest/upload/${endpoint}`, {
+        method: "POST",
+        body: formData
+      });
+
+      if (res.ok) {
+        setStatusMessage(`Ingestion successful! New equipment nodes and remedy edges extracted.`);
+        setSelectedIngestFile(null);
+        const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+        if (fileInput) fileInput.value = "";
+        
+        fetchMetrics();
+        fetchGraphData(activeEquipment);
+      } else {
+        const errData = await res.json();
+        setErrorMessage(`Ingestion failed: ${errData.detail || "Unknown error"}`);
+      }
+      setTimeout(() => setStatusMessage(""), 5000);
+    } catch (err) {
+      setErrorMessage("Lost connection to API during document upload.");
+      console.error(err);
     }
   };
 
@@ -363,6 +401,44 @@ export default function Dashboard() {
               </button>
             </form>
             {errorMessage && <p className="text-red-400 text-xs mt-2">{errorMessage}</p>}
+          </div>
+
+          {/* Document Ingestion Hub */}
+          <div className="bg-gray-800 p-4 rounded-lg border border-gray-700">
+            <h2 className="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wider">Document Ingestion Hub</h2>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-gray-500 text-[10px] mb-1">Document Source Type</label>
+                <select 
+                  value={ingestType} 
+                  onChange={(e) => setIngestType(e.target.value as "pid" | "notes")}
+                  className="bg-gray-900 border border-gray-700 rounded px-2.5 py-1.5 text-xs w-full text-white focus:outline-none focus:border-blue-500"
+                >
+                  <option value="pid">P&ID PDF / Image Schematic</option>
+                  <option value="notes">Shift Log / Form / Spreadsheet / Email</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-gray-500 text-[10px] mb-1">Select Document File</label>
+                <input 
+                  type="file" 
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files.length > 0) {
+                      setSelectedIngestFile(e.target.files[0]);
+                    }
+                  }}
+                  className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs w-full text-gray-400 focus:outline-none file:bg-gray-800 file:border-0 file:text-white file:text-xs file:px-2 file:py-1 file:mr-2 file:rounded file:cursor-pointer"
+                  accept=".pdf,.txt,.png,.jpg,.jpeg"
+                />
+              </div>
+              <button 
+                onClick={handleUploadIngest}
+                disabled={!selectedIngestFile}
+                className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded transition disabled:opacity-50 cursor-pointer"
+              >
+                Upload & Ingest Asset Data
+              </button>
+            </div>
           </div>
 
           {/* Settings / Persona */}

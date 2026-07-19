@@ -124,6 +124,62 @@ def ingest_shift_notes(file_path: str, db: Session = Depends(get_db)) -> Dict[st
     result["status"] = "accepted"
     return result
 
+@app.post("/api/ingest/upload/pid", status_code=status.HTTP_202_ACCEPTED)
+async def upload_and_ingest_pid(file: UploadFile = File(...), db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """
+    Upload and parse a custom P&ID (PDF or Image) in real-time.
+    """
+    import os
+    import shutil
+    upload_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "datasets", "temp_uploads"))
+    os.makedirs(upload_dir, exist_ok=True)
+    
+    file_path = os.path.join(upload_dir, file.filename)
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+            
+        result = IngestionService(db).ingest_pid(file_path, use_cache=False)
+        result["status"] = "accepted"
+        
+        from backend.services.rag_service import sync_edge_embeddings
+        sync_edge_embeddings(db)
+        
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to ingest uploaded P&ID: {str(e)}"
+        )
+
+@app.post("/api/ingest/upload/shift-notes", status_code=status.HTTP_202_ACCEPTED)
+async def upload_and_ingest_shift_notes(file: UploadFile = File(...), db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """
+    Upload and parse unstructured shift-note/email/spreadsheets/work-orders in real-time.
+    """
+    import os
+    import shutil
+    upload_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "datasets", "temp_uploads"))
+    os.makedirs(upload_dir, exist_ok=True)
+    
+    file_path = os.path.join(upload_dir, file.filename)
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+            
+        result = IngestionService(db).ingest_shift_notes(file_path, use_cache=False)
+        result["status"] = "accepted"
+        
+        from backend.services.rag_service import sync_edge_embeddings
+        sync_edge_embeddings(db)
+        
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to ingest uploaded shift notes: {str(e)}"
+        )
+
 # --- Graph Query & Feedback Endpoints ---
 @app.get("/api/trace/{equipment_id}", response_model=GraphTraceResult)
 def trace_topology_and_history(equipment_id: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
