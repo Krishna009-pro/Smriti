@@ -60,7 +60,11 @@ def test_cached_ingestion(db_session):
     assert fix_node is not None
     assert fix_node.type == "fix"
     
-    edge = db_session.query(KnowledgeEdge).filter(KnowledgeEdge.id == "edge-has-fix-102-sample").first()
+    edge = db_session.query(KnowledgeEdge).filter(
+        KnowledgeEdge.source_id == "P-102",
+        KnowledgeEdge.target_id == "FIX-102",
+        KnowledgeEdge.relation_type == "has_known_fix"
+    ).first()
     assert edge is not None
     assert edge.relation_type == "has_known_fix"
 
@@ -93,8 +97,13 @@ def test_feedback_and_wilson_recalculation(db_session):
     db_session.commit()
     db_session.refresh(tech)
     
-    edge_id = "edge-has-fix-102-sample"
-    edge_before = db_session.query(KnowledgeEdge).filter(KnowledgeEdge.id == edge_id).first()
+    edge_before = db_session.query(KnowledgeEdge).filter(
+        KnowledgeEdge.source_id == "P-102",
+        KnowledgeEdge.target_id == "FIX-102",
+        KnowledgeEdge.relation_type == "has_known_fix"
+    ).first()
+    assert edge_before is not None
+    edge_id = edge_before.id
     pos_before = edge_before.positive_feedback
     
     # Record confirmation feedback

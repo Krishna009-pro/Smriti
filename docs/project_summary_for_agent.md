@@ -6,10 +6,10 @@ This document provides a comprehensive overview of the Smriti OS project context
 
 ## 1. Problem Statement
 In heavy, asset-intensive industries (manufacturing, energy, chemicals):
-* **Information Waste:** Plant professionals spend **35% of working hours** searching for documents or recreating existing information (McKinsey, 2024).
-* **Fragmentation:** The average large plant operates across **7 to 12 disconnected systems** (P&IDs, maintenance records, procedures, compliance spreadsheets, emails) (NASSCOM-EY).
-* **Unplanned Downtime:** Fragmented equipment history causes **18% to 22% of unplanned downtime events** (BIS Research) because maintenance teams act without historical context.
-* **The Retirement Cliff:** **25% of India's senior plant engineers are retiring in the next decade**, risking complete loss of critical, unwritten operational knowledge.
+* **Information Waste:** Plant professionals spend approximately **20% of their working hours** searching for scattered files and historical maintenance logs (McKinsey & Company).
+* **System Fragmentation:** Facilities operate across multiple disconnected silos—ranging from PDF piping schematics and manual shift handover logs to compliance spreadsheets and email chains.
+* **Downtime and Safety Risk:** Information silos contribute significantly to unplanned plant downtime and maintenance delays, as technicians lack instant access to past failure symptoms and their verified solutions.
+* **Knowledge Loss:** Plant operations face critical institutional memory loss as senior engineers retire, taking decades of undocumented troubleshooting expertise with them.
 
 ---
 
