@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from backend.config import settings
 from backend.models import (
     NodeResponse, EdgeResponse, FeedbackCreate, FeedbackResponse,
-    TelemetryReading, AlertResponse, GraphTraceResult
+    TelemetryReading, AlertResponse, GraphTraceResult, ChatRequest, ChatResponse
 )
 from backend.auth.router import router as auth_router
 from backend.auth.dependencies import get_current_user, RoleChecker
@@ -19,6 +19,7 @@ from backend.services.ingestion_service import IngestionService
 from backend.services.graph_service import GraphService
 from backend.services.watcher import TelemetryWatcher
 from backend.services.alerts import AlertSender
+from backend.services.chat_service import ChatService
 
 # Global list of active SSE listener queues
 sse_listeners = []
@@ -230,6 +231,14 @@ def demo_engineer_only(current_user: User = Depends(RoleChecker(["engineer", "ma
         "message": f"Access granted to engineering route. Hello {current_user.username}!",
         "role": current_user.role
     }
+
+@app.post("/api/chat", response_model=ChatResponse)
+async def chat_with_copilot(request: ChatRequest, db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """
+    Conversational AI Copilot Chat Interface.
+    """
+    response_text = await ChatService(db).get_copilot_response(request.message)
+    return {"response": response_text}
 
 if __name__ == "__main__":
     import uvicorn

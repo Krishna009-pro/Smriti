@@ -58,6 +58,14 @@ export default function Dashboard() {
   const [errorMessage, setErrorMessage] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
 
+  // AI Chat Copilot States
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState<{ sender: "user" | "ai"; text: string }[]>([
+    { sender: "ai", text: "Welcome! Ask me about specific equipment (e.g. 'P-102' or 'V-101') to retrieve its connected P&ID topology and troubleshooting logs." }
+  ]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+
   // Fetch metrics and active graph topology
   const fetchMetrics = async () => {
     try {
@@ -134,6 +142,34 @@ export default function Dashboard() {
       setTimeout(() => setStatusMessage(""), 4000);
     } catch (err) {
       console.error("Ingestion request failed", err);
+    }
+  };
+
+  const sendChatMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!chatInput.trim()) return;
+
+    const userMsg = chatInput.trim();
+    setChatMessages((prev) => [...prev, { sender: "user", text: userMsg }]);
+    setChatInput("");
+    setChatLoading(true);
+
+    try {
+      const res = await fetch(`${API_BASE}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: userMsg }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setChatMessages((prev) => [...prev, { sender: "ai", text: data.response }]);
+      } else {
+        setChatMessages((prev) => [...prev, { sender: "ai", text: "Error: Unable to connect to Smriti Copilot." }]);
+      }
+    } catch (err) {
+      setChatMessages((prev) => [...prev, { sender: "ai", text: "Error: Connection lost." }]);
+    } finally {
+      setChatLoading(false);
     }
   };
 
@@ -536,6 +572,82 @@ export default function Dashboard() {
           </div>
         </div>
       </footer>
+
+      {/* Floating AI Copilot Chat Button & Widget */}
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end">
+        {chatOpen ? (
+          <div className="w-80 sm:w-96 h-[450px] bg-gray-900 border border-gray-800 rounded-lg shadow-2xl flex flex-col overflow-hidden animate-fade-in mb-3">
+            {/* Header */}
+            <div className="bg-gray-950 border-b border-gray-850 px-4 py-3 flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span className="font-bold text-sm text-gray-200">Smriti AI Copilot</span>
+              </div>
+              <button 
+                onClick={() => setChatOpen(false)}
+                className="text-gray-400 hover:text-gray-200 text-xs font-semibold cursor-pointer"
+              >
+                Hide
+              </button>
+            </div>
+            {/* Messages */}
+            <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-gray-900/50">
+              {chatMessages.map((msg, i) => (
+                <div 
+                  key={i} 
+                  className={`flex ${msg.sender === "user" ? "justify-end" : "justify-start"}`}
+                >
+                  <div className={`max-w-[85%] rounded px-3 py-2 text-xs leading-relaxed ${
+                    msg.sender === "user" 
+                      ? "bg-blue-600 text-white" 
+                      : "bg-gray-800 border border-gray-700 text-gray-100"
+                  }`}>
+                    {msg.text}
+                  </div>
+                </div>
+              ))}
+              {chatLoading && (
+                <div className="flex justify-start">
+                  <div className="bg-gray-800 border border-gray-700 text-gray-400 max-w-[85%] rounded px-3 py-2 text-xs italic flex items-center gap-1.5">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-gray-500 animate-bounce"></span>
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-gray-500 animate-bounce delay-150"></span>
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-gray-500 animate-bounce delay-300"></span>
+                    Copilot is thinking...
+                  </div>
+                </div>
+              )}
+            </div>
+            {/* Input Form */}
+            <form onSubmit={sendChatMessage} className="p-3 bg-gray-950 border-t border-gray-800 flex gap-2">
+              <input 
+                type="text"
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                placeholder="Ask about equipment or failure..."
+                className="flex-1 bg-gray-900 border border-gray-750 text-white placeholder-gray-500 text-xs px-3 py-2 rounded focus:outline-none focus:border-blue-500"
+              />
+              <button 
+                type="submit"
+                disabled={chatLoading}
+                className="bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs px-4 py-2 rounded transition disabled:opacity-50 cursor-pointer"
+              >
+                Send
+              </button>
+            </form>
+          </div>
+        ) : null}
+
+        {/* Toggle Button */}
+        <button
+          onClick={() => setChatOpen(!chatOpen)}
+          className="flex items-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-full shadow-lg font-bold text-xs transition cursor-pointer hover:scale-105 active:scale-95"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z" />
+          </svg>
+          {chatOpen ? "Close Assistant" : "Ask Smriti Copilot"}
+        </button>
+      </div>
     </div>
   );
 }

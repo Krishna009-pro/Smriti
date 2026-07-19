@@ -83,3 +83,10 @@ class AlertResponse(BaseModel):
 class GraphTraceResult(BaseModel):
     nodes: List[NodeResponse]
     edges: List[EdgeResponse]
+
+# --- AI Chat Copilot Schemas ---
+class ChatRequest(BaseModel):
+    message: str
+
+class ChatResponse(BaseModel):
+    response: str
