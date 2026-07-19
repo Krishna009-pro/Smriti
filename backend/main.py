@@ -55,6 +55,11 @@ async def startup_event():
         from backend.services.rag_service import sync_edge_embeddings
         from backend.db.session import SessionLocal
         init_vector_store()
+        
+        # Eagerly warm up embedding model
+        from backend.services.embeddings import get_embedder
+        get_embedder()
+
         db = SessionLocal()
         try:
             sync_edge_embeddings(db)

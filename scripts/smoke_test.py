@@ -19,7 +19,7 @@ def run_smoke_test():
     reset_demo()
     
     print("\n[*] 2. Starting API Smoke Test against: " + API_URL)
-    client = httpx.Client(base_url=API_URL)
+    client = httpx.Client(base_url=API_URL, timeout=20.0)
 
     # A. Healthcheck
     try:
