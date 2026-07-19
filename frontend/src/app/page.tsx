@@ -382,6 +382,13 @@ export default function Dashboard() {
                 <span>Compliance / Safety Flags</span>
                 <span className="font-bold text-red-400 px-2 py-0.5 bg-red-950/60 border border-red-900 rounded">{metrics.compliance_count}</span>
               </div>
+              <a 
+                href={`${API_BASE}/api/compliance/export/${activeEquipment}`}
+                download
+                className="block text-center w-full py-1.5 mt-2 bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs rounded transition cursor-pointer"
+              >
+                Export Compliance Audit PDF
+              </a>
             </div>
           </div>
 

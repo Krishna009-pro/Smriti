@@ -389,6 +389,29 @@ async def chat_with_vision(file: UploadFile = File(...), db: Session = Depends(g
             detail=f"Failed to process image: {str(e)}"
         )
 
+@app.get("/api/compliance/export/{equipment_id}")
+def export_compliance_pdf(equipment_id: str, db: Session = Depends(get_db)):
+    """
+    Export a structured compliance audit PDF report for an asset tag.
+    """
+    try:
+        from backend.services.compliance_service import generate_compliance_pdf
+        pdf_buffer = generate_compliance_pdf(db, equipment_id)
+        
+        headers = {
+            "Content-Disposition": f"attachment; filename=smriti_compliance_{equipment_id}.pdf"
+        }
+        return StreamingResponse(
+            pdf_buffer,
+            media_type="application/pdf",
+            headers=headers
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate compliance report: {str(e)}"
+        )
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(

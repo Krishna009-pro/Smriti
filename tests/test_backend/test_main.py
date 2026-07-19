@@ -22,3 +22,9 @@ def test_dashboard_metrics_placeholder():
     response = client.get("/api/dashboard/metrics")
     assert response.status_code == 200
     assert "context_retained_pct" in response.json()
+
+def test_export_compliance_pdf():
+    response = client.get("/api/compliance/export/P-102")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert "attachment" in response.headers["content-disposition"]
