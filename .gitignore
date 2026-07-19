@@ -63,3 +63,9 @@ Desktop.ini
 
 # Temp Ingest Uploads
 datasets/temp_uploads/
+
+# Lovable UI build artifacts
+frontend/.output/
+frontend/dist/
+frontend/.wrangler/
+frontend_next_backup/
