@@ -1,20 +1,70 @@
 import asyncio
+from datetime import datetime
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from typing import Dict, Any, List
+from sqlalchemy.orm import Session
 
 from backend.config import settings
 from backend.models import (
     NodeResponse, EdgeResponse, FeedbackCreate, FeedbackResponse,
     TelemetryReading, AlertResponse, GraphTraceResult
 )
+from backend.auth.router import router as auth_router
+from backend.auth.dependencies import get_current_user, RoleChecker
+from backend.db.models import User
+from backend.db.session import get_db
+from backend.services.ingestion_service import IngestionService
+from backend.services.graph_service import GraphService
+from backend.services.watcher import TelemetryWatcher
+from backend.services.alerts import AlertSender
+
+# Global list of active SSE listener queues
+sse_listeners = []
+
+# Initialize alert sender with settings credentials
+alert_sender = AlertSender(
+    bot_token=settings.telegram_bot_token,
+    chat_id=settings.telegram_chat_id
+)
+
+# Watcher alert callback to fanout alerts to Telegram and dashboard clients
+async def handle_watcher_alert(alert_payload: dict):
+    # 1. Forward to Telegram bot
+    await alert_sender.send_telegram_alert(alert_payload)
+    
+    # 2. Dispatch to all connected SSE clients
+    for queue in sse_listeners:
+        await queue.put(alert_payload)
+
+watcher = TelemetryWatcher(on_alert=handle_watcher_alert)
 
 app = FastAPI(
     title="Smriti — Industrial Memory OS API",
     description="Fuses plant topology with experiential knowledge using structured extraction and a self-learning graph.",
     version="1.0.0"
 )
+
+@app.on_event("startup")
+async def startup_event():
+    await watcher.start()
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    await watcher.stop()
+
+# Include Auth Router
+app.include_router(auth_router)
+
+@app.get("/")
+def read_root():
+    return {
+        "status": "online",
+        "service": "Smriti — Industrial Memory OS API",
+        "docs": "/docs",
+        "health": "/health"
+    }
 
 # CORS middleware config
 app.add_middleware(
@@ -34,72 +84,69 @@ def health_check() -> Dict[str, str]:
 
 # --- Ingestion Endpoints ---
 @app.post("/api/ingest/pid", status_code=status.HTTP_202_ACCEPTED)
-def ingest_pid(file_path: str) -> Dict[str, Any]:
+def ingest_pid(file_path: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
     """
     Parse an uploaded P&ID (PDF/image) and extract equipment nodes + structural edges.
     """
-    return {
-        "status": "accepted",
-        "message": f"Processing P&ID file: {file_path}",
-        "nodes_extracted": 0,
-        "edges_extracted": 0
-    }
+    result = IngestionService(db).ingest_pid(file_path)
+    result["status"] = "accepted"
+    return result
 
 @app.post("/api/ingest/shift-notes", status_code=status.HTTP_202_ACCEPTED)
-def ingest_shift_notes(file_path: str) -> Dict[str, Any]:
+def ingest_shift_notes(file_path: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
     """
     Parse unstructured shift-note/work-order text and extract decision–symptom–fix triples.
     """
-    return {
-        "status": "accepted",
-        "message": f"Processing shift notes file: {file_path}",
-        "edges_extracted": 0
-    }
+    result = IngestionService(db).ingest_shift_notes(file_path)
+    result["status"] = "accepted"
+    return result
 
 # --- Graph Query & Feedback Endpoints ---
 @app.get("/api/trace/{equipment_id}", response_model=GraphTraceResult)
-def trace_topology_and_history(equipment_id: str) -> Dict[str, Any]:
+def trace_topology_and_history(equipment_id: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
     """
     Get structural connects_to neighbors (up to 3 hops) and ranked historical fixes.
     """
-    return {
-        "nodes": [],
-        "edges": []
-    }
+    return GraphService(db).trace_topology_and_history(equipment_id)
 
 @app.post("/api/feedback", response_model=FeedbackResponse)
-def capture_feedback(feedback: FeedbackCreate) -> Dict[str, Any]:
+def capture_feedback(feedback: FeedbackCreate, db: Session = Depends(get_db)) -> Dict[str, Any]:
     """
     Submit technician feedback on whether a suggested fix worked, and update confidence.
     """
-    return {
-        "id": 1,
-        "edge_id": feedback.edge_id,
-        "technician_id": feedback.technician_id,
-        "outcome": feedback.outcome,
-        "note": feedback.note,
-        "timestamp": "2026-07-18T12:00:00Z"
-    }
+    try:
+        result = GraphService(db).record_feedback(
+            feedback.edge_id,
+            feedback.technician_id,
+            feedback.outcome,
+            feedback.note
+        )
+        return {
+            "id": result["feedback_id"],
+            "edge_id": result["edge_id"],
+            "technician_id": str(feedback.technician_id),
+            "outcome": result["outcome"],
+            "note": feedback.note,
+            "timestamp": datetime.utcnow()
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 # --- Compliance Endpoint ---
 @app.get("/api/compliance", response_model=List[EdgeResponse])
-def check_compliance_status() -> List[Any]:
+def check_compliance_status(db: Session = Depends(get_db)) -> List[Any]:
     """
     Return decision traces flagged as safety or compliance-relevant.
     """
-    return []
+    return GraphService(db).check_compliance_status()
 
 # --- Executive Dashboard Endpoints ---
 @app.get("/api/dashboard/metrics")
-def get_dashboard_metrics() -> Dict[str, Any]:
+def get_dashboard_metrics(db: Session = Depends(get_db)) -> Dict[str, Any]:
     """
     Calculate Institutional Context Retained %, Expert Dependency Score, and compliance count.
     """
-    return {
-        "context_retained_pct": 0.0,
-        "expert_dependency_score": 0.0,
-        "compliance_flags_count": 0
-    }
+    return GraphService(db).get_dashboard_metrics()
 
 # --- SSE Proactive Alerts Endpoint ---
 @app.get("/api/alerts/stream")
@@ -108,23 +155,80 @@ def alerts_stream():
     Server-Sent Events (SSE) stream for real-time proactive telemetry alerts.
     """
     async def event_generator():
-        while True:
-            # Yield empty keep-alive comment or actual alert if triggered
-            yield "comment: keepalive\n\n"
-            await asyncio.sleep(15)
+        import json
+        queue = asyncio.Queue()
+        sse_listeners.append(queue)
+        try:
+            while True:
+                try:
+                    alert = await asyncio.wait_for(queue.get(), timeout=10.0)
+                    yield f"data: {json.dumps(alert)}\n\n"
+                    queue.task_done()
+                except asyncio.TimeoutError:
+                    yield "comment: keepalive\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            try:
+                sse_listeners.remove(queue)
+            except ValueError:
+                pass
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
+@app.post("/api/telemetry/simulate", status_code=status.HTTP_200_OK)
+async def trigger_telemetry_simulation(reading: TelemetryReading) -> Dict[str, Any]:
+    """
+    Simulate a live telemetry reading, feeding it into the TelemetryWatcher queue.
+    """
+    reading_dict = reading.dict()
+    await watcher.telemetry_queue.put(reading_dict)
+    return {
+        "status": "triggered",
+        "reading": reading_dict,
+        "alert_sent": True
+    }
+
 @app.post("/api/alerts/trigger", status_code=status.HTTP_200_OK)
-def trigger_alert_manually(equipment_id: str, symptom: str) -> Dict[str, Any]:
+async def trigger_alert_manually(equipment_id: str, symptom: str) -> Dict[str, Any]:
     """
     Manual watcher trigger endpoint for stage presentations/demo guarantees.
     """
+    # Build a simulated pressure drop reading to trigger watcher signature match
+    reading_dict = {
+        "equipment_id": equipment_id,
+        "metric": "pressure",
+        "value": 50.0,
+        "delta_pct": 20.0
+    }
+    await watcher.telemetry_queue.put(reading_dict)
     return {
         "status": "triggered",
         "equipment_id": equipment_id,
         "symptom": symptom,
         "alert_sent": True
+    }
+
+# --- Demo Protected Endpoints ---
+@app.get("/api/demo/protected")
+def demo_protected(current_user: User = Depends(get_current_user)):
+    """
+    Demo endpoint requiring valid JWT authentication.
+    """
+    return {
+        "message": "Access granted to protected route",
+        "username": current_user.username,
+        "role": current_user.role
+    }
+
+@app.get("/api/demo/engineer-only")
+def demo_engineer_only(current_user: User = Depends(RoleChecker(["engineer", "manager"]))):
+    """
+    Demo endpoint requiring engineer or manager roles.
+    """
+    return {
+        "message": f"Access granted to engineering route. Hello {current_user.username}!",
+        "role": current_user.role
     }
 
 if __name__ == "__main__":
