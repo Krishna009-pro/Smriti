@@ -61,6 +61,7 @@ This document summarizes the current state, modifications, and system architectu
 ### 5. Real-Time Document Ingestion Hub
 * **Multi-Format Upload:** Built a new **"Document Ingestion Hub"** panel on the web dashboard sidebar. Users can upload custom PDFs, scanned forms, emails, or spreadsheets.
 * **Extraction Processing:** Uploaded documents are saved, parsed dynamically by the Gemini 2.5 Flash pipeline (bypassing seed caches), verified by schema validators, and injected directly into the live relational and sqlite-vec vector database.
+* **Valid Demo Seeds:** Replaced the empty `sample_pid.pdf` placeholder with a **real, valid vector PDF** compiled using ReportLab. It contains a visual refinery piping flowchart (`VLV-102a` ➔ `P-101A` ➔ `V-101`) that can be opened in any reader and parsed by the Gemini vision pipeline.
 
 ### 6. Interactive Compliance PDF Exporter
 * **PDF Generation Engine:** Built [compliance_service.py](file:///c:/Users/kkp18/OneDrive/Pictures/Documents/Smriti/backend/services/compliance_service.py) using `reportlab` generating beautiful, highly formatted PDF reports of equipment details, physical topology connections, and safety remedy tables with confidence statistics.
