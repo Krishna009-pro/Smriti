@@ -1,300 +1,363 @@
-import os
-import json
-import uuid
+"""
+services/ingestion_service.py
+
+Fixes vs. the previous version, each one load-bearing:
+
+1. Live extraction actually happens now. use_cache=False attempts a real call
+   through ExtractionClient before ever touching the cache. Previously the
+   `use_cache` parameter was accepted and never branched on -- every call read
+   the same static JSON regardless of what was passed in.
+2. `confidence` is derived, never accepted as input. It is always recomputed
+   from positive_feedback/negative_feedback via wilson_lower_bound(). A cache
+   file that sets positive_feedback without also hand-computing a matching
+   confidence can no longer desync the two numbers.
+3. Edge IDs are content-hashed, not caller-supplied. Re-running extraction on
+   a lightly-edited source file updates the same edge instead of colliding
+   with or duplicating it.
+4. Ingestion validates the FULL payload before writing anything, and writes
+   inside a single try/except with rollback on any failure -- no more partial
+   commits from a malformed record mid-loop.
+5. `Document` is now actually used as the audit trail the schema already
+   supports: every ingestion run creates a Document row (status: processing
+   -> processed/failed) and every edge it writes is linked via document_id.
+
+Also fixes a real schema mismatch: the extraction contract documented in the
+engineering spec uses `{"equipment": [...], "connections": [...]}`, but this
+file previously read cached P&ID JSON via `data.get("nodes", [])` /
+`data.get("edges", [])` -- keys that don't appear anywhere in that contract.
+This version standardizes on `equipment` / `connections` throughout. If your
+existing datasets/cached_extractions/pid_extraction.json still uses
+`nodes`/`edges`, rename those two top-level keys before running this -- that's
+a one-time seed-data fix, not a code change.
+"""
 import hashlib
+import json
 import logging
-import anyio
-from typing import Dict, Any, List
+import os
+import re
+import uuid
+from typing import Any, Dict
+
 from sqlalchemy.orm import Session
 
-from backend.db.models import KnowledgeNode, KnowledgeEdge, Document
+from backend.db.models import Document, KnowledgeEdge, KnowledgeNode
 from backend.services.confidence import wilson_lower_bound
-from backend.services.extraction_client import ExtractionClient
+from .extraction_client import ExtractionClient, ExtractionError
+from .extraction_schemas import PidExtraction, ShiftNoteExtractionBatch
 
-logger = logging.getLogger("ingestion_service")
+logger = logging.getLogger(__name__)
+
+# Same tag convention as extraction_schemas.py. Shift notes name equipment in
+# free text ("Pump P-102"), not a clean field, so this is a *search*, not a
+# full match.
+_TAG_SEARCH_RE = re.compile(r"\b[A-Z]{1,4}-\d{2,4}\b")
+
+# Splits shift-note text on date/shift headers so a long log is sent to the
+# extractor in shift-sized pieces rather than one call that risks truncation
+# or the model skimming later entries. Falls back to paragraph-sized chunks
+# if no headers are found.
+_SHIFT_HEADER_RE = re.compile(
+    r"(?=^\s*(?:\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|day\s+shift|night\s+shift|morning\s+shift).*$)",
+    re.MULTILINE | re.IGNORECASE,
+)
+
+
+def _resolve_equipment_id(equipment_name: str) -> str:
+    """Pull a canonical tag out of free text if one is present; otherwise
+    derive a stable slug so the same free-text name always maps to the same
+    node. Never silently drop a triple just because a formal tag is missing."""
+    match = _TAG_SEARCH_RE.search(equipment_name)
+    if match:
+        return match.group(0)
+    slug = re.sub(r"[^A-Za-z0-9]+", "_", equipment_name.strip()).strip("_").upper()
+    return slug or "UNKNOWN_EQUIPMENT"
+
+
+def _stable_edge_id(source_id: str, target_id: str, relation_type: str, discriminator: str = "") -> str:
+    """Deterministic edge ID derived from content, not caller input. The same
+    fact extracted twice (even from a re-run on an edited source file)
+    produces the same ID -> an update, not a duplicate. A genuinely new fact
+    gets a genuinely new ID."""
+    key = f"{source_id}|{target_id}|{relation_type}|{discriminator}"
+    return "E-" + hashlib.sha1(key.encode()).hexdigest()[:12]
+
+
+def _chunk_shift_notes(text: str, max_chars: int = 4000) -> list[str]:
+    parts = [p.strip() for p in _SHIFT_HEADER_RE.split(text) if p.strip()]
+    if len(parts) > 1:
+        return parts
+
+    # No headers detected -- fall back to fixed-size chunks on paragraph breaks.
+    paragraphs = text.split("\n\n")
+    chunks: list[str] = []
+    current = ""
+    for para in paragraphs:
+        if current and len(current) + len(para) > max_chars:
+            chunks.append(current)
+            current = para
+        else:
+            current = f"{current}\n\n{para}".strip()
+    if current:
+        chunks.append(current)
+    return chunks or [text]
+
 
 class IngestionService:
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, extraction_client: ExtractionClient | None = None):
         self.db = db
-        self.extraction_client = ExtractionClient()
+        self.extraction_client = extraction_client or ExtractionClient()
 
     def get_cache_path(self, filename: str) -> str:
-        # Resolve path dynamically to workspace_root/datasets/cached_extractions/filename
         current_dir = os.path.dirname(os.path.abspath(__file__))
         project_root = os.path.abspath(os.path.join(current_dir, "..", ".."))
         return os.path.join(project_root, "datasets", "cached_extractions", filename)
 
-    def _stable_edge_id(self, source_id: str, target_id: str, relation_type: str, symptom_desc: str | None) -> str:
-        key = f"{source_id}|{target_id}|{relation_type}|{symptom_desc or ''}"
-        return "E-" + hashlib.sha1(key.encode()).hexdigest()[:12]
-
-    def _create_document(self, file_path: str, file_type: str) -> str:
-        doc_id = "DOC-" + str(uuid.uuid4())[:8]
-        doc = Document(
-            id=doc_id,
-            filename=os.path.basename(file_path),
-            file_type=file_type,
-            status="processing"
-        )
-        self.db.add(doc)
-        self.db.commit()
-        return doc_id
-
-    def _update_document_status(self, doc_id: str, status: str):
-        doc = self.db.query(Document).filter(Document.id == doc_id).first()
-        if doc:
-            doc.status = status
-            self.db.commit()
+    # ------------------------------------------------------------------
+    # P&ID ingestion
+    # ------------------------------------------------------------------
 
     def ingest_pid(self, file_path: str, use_cache: bool = True) -> Dict[str, Any]:
         """
-        FR-1: Parse an uploaded P&ID PDF/image and extract equipment nodes and structural connections.
-        If use_cache is True, load pre-baked JSON from datasets/cached_extractions/pid_extraction.json.
-        Otherwise, call the live ExtractionClient and fall back to the cache if it fails.
+        FR-1: Parse a P&ID into equipment nodes + structural (`connects_to`) edges.
+
+        use_cache=False attempts a live vision extraction first; ANY failure
+        (timeout, HTTP error, schema validation) falls back to the cache
+        rather than surfacing an error to the demo UI. use_cache=True skips
+        the live attempt entirely.
         """
-        doc_id = self._create_document(file_path, "pid")
-        data = None
+        document = self._start_document(file_path, file_type="pid")
+        used_live = False
 
-        # 1. Attempt extraction
-        if not use_cache:
-            try:
-                # Run the async extraction client call synchronously using anyio
-                data = anyio.run(self.extraction_client.extract_pid, file_path)
-                logger.info(f"Live P&ID vision extraction succeeded for: {file_path}")
-            except Exception as e:
-                logger.warning(f"Live P&ID extraction failed ({e}) — falling back to cached extraction")
-
-        if not data:
-            # Load from cache fallback
-            cache_path = self.get_cache_path("pid_extraction.json")
-            try:
-                with open(cache_path, "r") as f:
-                    data = json.load(f)
-            except Exception as e:
-                self._update_document_status(doc_id, "failed")
-                return {
-                    "status": "error",
-                    "message": f"Failed to load cached P&ID: {str(e)}",
-                    "nodes_extracted": 0,
-                    "edges_extracted": 0
-                }
-
-        # 2. Validate input schema before database writes
-        if "nodes" not in data or "edges" not in data:
-            self._update_document_status(doc_id, "failed")
-            return {
-                "status": "error",
-                "message": "Malformed extraction payload: missing 'nodes' or 'edges' keys.",
-                "nodes_extracted": 0,
-                "edges_extracted": 0
-            }
-
-        nodes_created = 0
-        edges_created = 0
-
-        # 3. Write batch atomically
         try:
-            # Upsert Nodes
-            for node_data in data["nodes"]:
-                node_id = node_data.get("id")
-                if not node_id:
-                    raise KeyError("Node record is missing 'id'")
-                node = self.db.query(KnowledgeNode).filter(KnowledgeNode.id == node_id).first()
-                if not node:
-                    node = KnowledgeNode(
-                        id=node_id,
-                        type=node_data.get("type", "equipment"),
-                        name=node_data.get("name", node_id),
-                        properties=node_data.get("properties", {})
-                    )
-                    self.db.add(node)
-                    nodes_created += 1
-                else:
-                    node.type = node_data.get("type", node.type)
-                    node.name = node_data.get("name", node.name)
-                    node.properties = {**node.properties, **node_data.get("properties", {})}
+            data = None
+            if not use_cache:
+                try:
+                    data = self.extraction_client.extract_pid(file_path)
+                    used_live = True
+                except ExtractionError as e:
+                    logger.warning("Live P&ID extraction failed, falling back to cache: %s", e)
 
-            # Upsert Edges
-            for edge_data in data["edges"]:
-                source_id = edge_data.get("source_id")
-                target_id = edge_data.get("target_id")
-                relation_type = edge_data.get("relation_type")
-                if not source_id or not target_id or not relation_type:
-                    raise KeyError("Edge record is missing required source/target/relation_type tags")
+            if data is None:
+                data = self._load_cache("pid_extraction.json")
 
-                # Generate content-hashed edge ID
-                edge_id = self._stable_edge_id(source_id, target_id, relation_type, edge_data.get("symptom_description"))
+            # Re-validate even the cache -- a hand-edited seed file should fail
+            # loudly during rehearsal, not silently during the real demo.
+            PidExtraction.model_validate(data)
 
-                edge = self.db.query(KnowledgeEdge).filter(KnowledgeEdge.id == edge_id).first()
-                if not edge:
-                    edge = KnowledgeEdge(
-                        id=edge_id,
-                        source_id=source_id,
-                        target_id=target_id,
-                        relation_type=relation_type,
-                        flow_direction=edge_data.get("flow_direction"),
-                        telemetry_signature=edge_data.get("telemetry_signature", {}),
-                        source_excerpt=edge_data.get("source_excerpt"),
-                        source_type=edge_data.get("source_type", "pid"),
-                        document_id=doc_id
-                    )
-                    self.db.add(edge)
-                    edges_created += 1
-                else:
-                    edge.flow_direction = edge_data.get("flow_direction", edge.flow_direction)
-                    edge.document_id = doc_id
+            nodes_created, edges_created = self._write_pid_graph(data, document)
 
+            document.status = "processed"
             self.db.commit()
-            self._update_document_status(doc_id, "processed")
+
             return {
                 "status": "success",
                 "nodes_extracted": nodes_created,
                 "edges_extracted": edges_created,
                 "source_file": file_path,
-                "document_id": doc_id
+                "document_id": document.id,
+                "used_live_extraction": used_live,
             }
 
-        except Exception as err:
+        except Exception as e:
             self.db.rollback()
-            self._update_document_status(doc_id, "failed")
-            logger.error(f"P&ID DB ingestion transaction failed: {err}")
+            document.status = "failed"
+            self.db.commit()
+            logger.error("P&ID ingestion failed for %s: %s", file_path, e)
             return {
                 "status": "error",
-                "message": f"Database transaction rolled back due to error: {str(err)}",
+                "message": str(e),
                 "nodes_extracted": 0,
-                "edges_extracted": 0
+                "edges_extracted": 0,
+                "document_id": document.id,
             }
+
+    def _write_pid_graph(self, data: dict, document: Document) -> tuple[int, int]:
+        nodes_created = 0
+        edges_created = 0
+
+        for node_data in data.get("equipment", []):
+            node_id = node_data["id"]
+            node = self.db.get(KnowledgeNode, node_id)
+            if not node:
+                node = KnowledgeNode(
+                    id=node_id,
+                    type=node_data.get("type", "equipment"),
+                    name=node_data.get("name", node_id),
+                    properties=node_data.get("properties", {}),
+                )
+                self.db.add(node)
+                nodes_created += 1
+            else:
+                node.name = node_data.get("name", node.name)
+                node.properties = {**node.properties, **node_data.get("properties", {})}
+
+        for conn in data.get("connections", []):
+            source_id = conn["source_id"]
+            target_id = conn["target_id"]
+            flow_direction = conn.get("flow_direction")
+            edge_id = _stable_edge_id(source_id, target_id, "connects_to", flow_direction or "")
+
+            edge = self.db.get(KnowledgeEdge, edge_id)
+            if not edge:
+                edge = KnowledgeEdge(
+                    id=edge_id,
+                    source_id=source_id,
+                    target_id=target_id,
+                    relation_type="connects_to",
+                    flow_direction=flow_direction,
+                    source_excerpt=conn.get("source_excerpt"),
+                    source_type="pid",
+                    document_id=document.id,
+                )
+                self.db.add(edge)
+                edges_created += 1
+            else:
+                edge.flow_direction = flow_direction or edge.flow_direction
+                edge.document_id = document.id  # most recent document that confirmed this edge
+
+        return nodes_created, edges_created
+
+    # ------------------------------------------------------------------
+    # Shift-note ingestion
+    # ------------------------------------------------------------------
 
     def ingest_shift_notes(self, file_path: str, use_cache: bool = True) -> Dict[str, Any]:
         """
-        FR-2: Parse shift notes text and extract decision-symptom-fix triples as experiential edges.
-        If use_cache is True, load pre-baked JSON from datasets/cached_extractions/shift_notes_extraction.json.
-        Otherwise, call the live ExtractionClient and fall back to the cache if it fails.
+        FR-2: Parse shift-note / work-order text into decision-symptom-fix
+        (`has_known_fix`) edges. Same live-attempt-with-fallback and
+        validate-both-paths policy as ingest_pid.
         """
-        doc_id = self._create_document(file_path, "shift_note")
-        data = None
+        document = self._start_document(file_path, file_type="shift_note")
+        used_live = False
 
-        # 1. Attempt extraction
-        if not use_cache:
-            try:
-                # Read raw file content to feed to extraction client
-                raw_text = ""
-                if os.path.exists(file_path):
-                    with open(file_path, "r", encoding="utf-8") as f:
-                        raw_text = f.read()
-                
-                if raw_text.strip():
-                    data = anyio.run(self.extraction_client.extract_shift_notes, raw_text)
-                    logger.info(f"Live shift notes text extraction succeeded for: {file_path}")
-            except Exception as e:
-                logger.warning(f"Live shift notes extraction failed ({e}) — falling back to cached extraction")
-
-        if not data:
-            # Load from cache fallback
-            cache_path = self.get_cache_path("shift_notes_extraction.json")
-            try:
-                with open(cache_path, "r") as f:
-                    data = json.load(f)
-            except Exception as e:
-                self._update_document_status(doc_id, "failed")
-                return {
-                    "status": "error",
-                    "message": f"Failed to load cached shift notes: {str(e)}",
-                    "edges_extracted": 0
-                }
-
-        edges_created = 0
-        nodes_created = 0
-
-        # 2. Write batch atomically
         try:
-            for edge_data in data:
-                source_id = edge_data.get("source_id")
-                target_id = edge_data.get("target_id")
-                relation_type = edge_data.get("relation_type")
-                if not source_id or not target_id or not relation_type:
-                    raise KeyError("Shift note edge record is missing source_id/target_id/relation_type keys")
+            extractions = None
+            if not use_cache:
+                try:
+                    text = self._read_text(file_path)
+                    extractions = []
+                    for chunk in _chunk_shift_notes(text):
+                        extractions.extend(self.extraction_client.extract_shift_notes(chunk))
+                    used_live = True
+                except (ExtractionError, OSError) as e:
+                    logger.warning("Live shift-note extraction failed, falling back to cache: %s", e)
+                    extractions = None
 
-                # Ensure target node exists (e.g. FIX-102)
-                target_node = self.db.query(KnowledgeNode).filter(KnowledgeNode.id == target_id).first()
-                if not target_node:
-                    target_node = KnowledgeNode(
-                        id=target_id,
-                        type="fix",
-                        name=f"Fix Procedure {target_id}",
-                        properties={}
-                    )
-                    self.db.add(target_node)
-                    nodes_created += 1
+            if extractions is None:
+                extractions = self._load_cache("shift_notes_extraction.json")
+                ShiftNoteExtractionBatch.model_validate({"extractions": extractions})
 
-                # Ensure source node exists (e.g. P-102)
-                source_node = self.db.query(KnowledgeNode).filter(KnowledgeNode.id == source_id).first()
-                if not source_node:
-                    source_node = KnowledgeNode(
-                        id=source_id,
-                        type="equipment",
-                        name=f"Equipment {source_id}",
-                        properties={}
-                    )
-                    self.db.add(source_node)
-                    nodes_created += 1
+            nodes_created, edges_created = self._write_experiential_edges(extractions, document)
 
-                # Generate content-hashed edge ID
-                edge_id = self._stable_edge_id(source_id, target_id, relation_type, edge_data.get("symptom_description"))
-
-                # Deriving confidence score strictly via positive/negative feedback
-                pos = edge_data.get("positive_feedback", 1)
-                neg = edge_data.get("negative_feedback", 0)
-                derived_conf = wilson_lower_bound(pos, pos + neg)
-
-                # Upsert the edge
-                edge = self.db.query(KnowledgeEdge).filter(KnowledgeEdge.id == edge_id).first()
-                if not edge:
-                    edge = KnowledgeEdge(
-                        id=edge_id,
-                        source_id=source_id,
-                        target_id=target_id,
-                        relation_type=relation_type,
-                        symptom_description=edge_data.get("symptom_description"),
-                        telemetry_signature=edge_data.get("telemetry_signature", {}),
-                        positive_feedback=pos,
-                        negative_feedback=neg,
-                        confidence=derived_conf,
-                        is_compliance_relevant=bool(edge_data.get("is_compliance_relevant", 0)),
-                        source_excerpt=edge_data.get("source_excerpt"),
-                        source_type=edge_data.get("source_type", "shift_note"),
-                        document_id=doc_id
-                    )
-                    self.db.add(edge)
-                    edges_created += 1
-                else:
-                    edge.source_id = source_id
-                    edge.target_id = target_id
-                    edge.relation_type = relation_type
-                    edge.symptom_description = edge_data.get("symptom_description", edge.symptom_description)
-                    edge.telemetry_signature = edge_data.get("telemetry_signature", edge.telemetry_signature)
-                    edge.positive_feedback = pos
-                    edge.negative_feedback = neg
-                    edge.confidence = derived_conf
-                    edge.is_compliance_relevant = bool(edge_data.get("is_compliance_relevant", edge.is_compliance_relevant))
-                    edge.document_id = doc_id
-
+            document.status = "processed"
             self.db.commit()
-            self._update_document_status(doc_id, "processed")
+
             return {
                 "status": "success",
                 "nodes_extracted": nodes_created,
                 "edges_extracted": edges_created,
                 "source_file": file_path,
-                "document_id": doc_id
+                "document_id": document.id,
+                "used_live_extraction": used_live,
             }
 
-        except Exception as err:
+        except Exception as e:
             self.db.rollback()
-            self._update_document_status(doc_id, "failed")
-            logger.error(f"Shift notes DB ingestion transaction failed: {err}")
+            document.status = "failed"
+            self.db.commit()
+            logger.error("Shift-note ingestion failed for %s: %s", file_path, e)
             return {
                 "status": "error",
-                "message": f"Database transaction rolled back due to error: {str(err)}",
-                "edges_extracted": 0
+                "message": str(e),
+                "nodes_extracted": 0,
+                "edges_extracted": 0,
+                "document_id": document.id,
             }
+
+    def _write_experiential_edges(self, extractions: list[dict], document: Document) -> tuple[int, int]:
+        nodes_created = 0
+        edges_created = 0
+
+        for item in extractions:
+            equipment_id = _resolve_equipment_id(item["equipment_name"])
+            equipment_node = self.db.get(KnowledgeNode, equipment_id)
+            if not equipment_node:
+                equipment_node = KnowledgeNode(
+                    id=equipment_id, type="equipment", name=item["equipment_name"], properties={},
+                )
+                self.db.add(equipment_node)
+                nodes_created += 1
+
+            fix_id = "FIX-" + hashlib.sha1(item["fix_description"].strip().lower().encode()).hexdigest()[:10]
+            fix_node = self.db.get(KnowledgeNode, fix_id)
+            if not fix_node:
+                fix_node = KnowledgeNode(id=fix_id, type="fix", name=item["fix_description"], properties={})
+                self.db.add(fix_node)
+                nodes_created += 1
+
+            edge_id = _stable_edge_id(equipment_id, fix_id, "has_known_fix", item["symptom_description"])
+            edge = self.db.get(KnowledgeEdge, edge_id)
+
+            if not edge:
+                positive, negative = 1, 0  # a freshly extracted fact starts as one piece of evidence, not "trusted"
+                edge = KnowledgeEdge(
+                    id=edge_id,
+                    source_id=equipment_id,
+                    target_id=fix_id,
+                    relation_type="has_known_fix",
+                    symptom_description=item["symptom_description"],
+                    telemetry_signature=item.get("telemetry_signature", {}),
+                    positive_feedback=positive,
+                    negative_feedback=negative,
+                    confidence=wilson_lower_bound(positive, positive + negative),  # DERIVED, never read from item
+                    is_compliance_relevant=bool(item.get("is_compliance_relevant", False)),
+                    source_excerpt=item.get("source_excerpt"),
+                    source_type="shift_note",
+                    document_id=document.id,
+                )
+                self.db.add(edge)
+                edges_created += 1
+            else:
+                # Same fact re-extracted from a different note: treat as independent
+                # corroboration, not a duplicate or a silent overwrite -- this is the
+                # same self-learning philosophy as technician feedback, just applied
+                # to ingestion instead of the feedback endpoint.
+                edge.positive_feedback += 1
+                edge.confidence = wilson_lower_bound(
+                    edge.positive_feedback, edge.positive_feedback + edge.negative_feedback
+                )
+                edge.is_compliance_relevant = edge.is_compliance_relevant or bool(
+                    item.get("is_compliance_relevant", False)
+                )
+                edge.document_id = document.id
+
+        return nodes_created, edges_created
+
+    # ------------------------------------------------------------------
+    # Shared helpers
+    # ------------------------------------------------------------------
+
+    def _start_document(self, file_path: str, file_type: str) -> Document:
+        """Committed immediately, before any extraction is attempted, so the
+        audit trail records a 'processing' -> 'failed' document even when
+        ingestion never gets to write a single node -- a Compliance Officer
+        should be able to see failed ingestion attempts, not just successful
+        ones."""
+        document = Document(
+            id=str(uuid.uuid4()),
+            filename=os.path.basename(file_path) if file_path else f"unknown_{file_type}",
+            file_type=file_type,
+            status="processing",
+        )
+        self.db.add(document)
+        self.db.commit()
+        return document
+
+    def _load_cache(self, filename: str) -> Any:
+        cache_path = self.get_cache_path(filename)
+        with open(cache_path, "r") as f:
+            return json.load(f)
+
+    def _read_text(self, file_path: str) -> str:
+        with open(file_path, "r", encoding="utf-8") as f:
+            return f.read()

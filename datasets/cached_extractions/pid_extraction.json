@@ -1,5 +1,5 @@
 {
-  "nodes": [
+  "equipment": [
     {
       "id": "TK-101",
       "type": "equipment",
@@ -30,22 +30,16 @@
       }
     }
   ],
-  "edges": [
+  "connections": [
     {
-      "id": "edge-tk-to-valve",
       "source_id": "TK-101",
       "target_id": "VLV-102a",
-      "relation_type": "connects_to",
-      "flow_direction": "downstream",
-      "source_type": "pid"
+      "flow_direction": "downstream"
     },
     {
-      "id": "edge-valve-to-pump",
       "source_id": "VLV-102a",
       "target_id": "P-102",
-      "relation_type": "connects_to",
-      "flow_direction": "downstream",
-      "source_type": "pid"
+      "flow_direction": "downstream"
     }
   ]
 }

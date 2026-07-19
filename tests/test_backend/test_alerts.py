@@ -88,7 +88,7 @@ async def test_watcher_matching_and_sse():
         
         assert alert is not None
         assert alert["equipment_id"] == "P-102"
-        assert alert["suggested_fix"] == "Fix Procedure FIX-102"
+        assert alert["suggested_fix"] == "Clear upstream Valve V-101"
         assert "seal leaking" in alert["symptom"]
         assert alert["telemetry"]["delta_pct"] == 18.0
         

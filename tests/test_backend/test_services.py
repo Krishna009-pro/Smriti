@@ -56,13 +56,13 @@ def test_cached_ingestion(db_session):
     assert notes_res["edges_extracted"] > 0
 
     # Verify fix node and edge were created
-    fix_node = db_session.query(KnowledgeNode).filter(KnowledgeNode.id == "FIX-102").first()
+    fix_node = db_session.query(KnowledgeNode).filter(KnowledgeNode.name == "Clear upstream Valve V-101").first()
     assert fix_node is not None
     assert fix_node.type == "fix"
     
     edge = db_session.query(KnowledgeEdge).filter(
         KnowledgeEdge.source_id == "P-102",
-        KnowledgeEdge.target_id == "FIX-102",
+        KnowledgeEdge.target_id == fix_node.id,
         KnowledgeEdge.relation_type == "has_known_fix"
     ).first()
     assert edge is not None
@@ -71,17 +71,20 @@ def test_cached_ingestion(db_session):
 def test_recursive_topology_and_history(db_session):
     graph_service = GraphService(db_session)
     
+    fix_node = db_session.query(KnowledgeNode).filter(KnowledgeNode.name == "Clear upstream Valve V-101").first()
+    assert fix_node is not None
+    
     # We trace starting from TK-101
     trace_res = graph_service.trace_topology_and_history("TK-101")
     assert "nodes" in trace_res
     assert "edges" in trace_res
     
-    # Nodes list should contain TK-101, VLV-102a, P-102, and FIX-102 (from the shift notes on P-102)
+    # Nodes list should contain TK-101, VLV-102a, P-102, and fix_node.id (from the shift notes on P-102)
     node_ids = [node.id for node in trace_res["nodes"]]
     assert "TK-101" in node_ids
     assert "VLV-102a" in node_ids
     assert "P-102" in node_ids
-    assert "FIX-102" in node_ids
+    assert fix_node.id in node_ids
     
     # Edges should contain connects_to and has_known_fix
     edge_types = [edge.relation_type for edge in trace_res["edges"]]
@@ -97,9 +100,12 @@ def test_feedback_and_wilson_recalculation(db_session):
     db_session.commit()
     db_session.refresh(tech)
     
+    fix_node = db_session.query(KnowledgeNode).filter(KnowledgeNode.name == "Clear upstream Valve V-101").first()
+    assert fix_node is not None
+    
     edge_before = db_session.query(KnowledgeEdge).filter(
         KnowledgeEdge.source_id == "P-102",
-        KnowledgeEdge.target_id == "FIX-102",
+        KnowledgeEdge.target_id == fix_node.id,
         KnowledgeEdge.relation_type == "has_known_fix"
     ).first()
     assert edge_before is not None
