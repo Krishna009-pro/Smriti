@@ -1,0 +1,4 @@
+Equipment_ID,Symptom,Resolution_Action,Technician,Date,Compliance_Relevant
+P-101A,Mechanical seal vibration,Checked pump alignment and tightened casing bolts,TECH-01,2026-07-17,true
+VLV-102a,Inlet vessel level control failure,Calibrated pressure transmitter control loop,ENG-01,2026-07-16,true
+V-101,Gland packing leakage,Replaced Teflon packing rings and lubricated stem,TECH-01,2026-07-15,false
