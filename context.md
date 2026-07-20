@@ -1,6 +1,6 @@
 # Smriti OS — Session Handover Context
 
-This document summarizes the current state, modifications, and system architecture for the next LLM session (Claude 3.5 Sonnet).
+This document summarizes the current state, modifications, and system architecture for the next LLM session.
 
 ---
 
@@ -10,71 +10,120 @@ This document summarizes the current state, modifications, and system architectu
 * **Smoke Verification:** The end-to-end smoke test script (`scripts/smoke_test.py`) runs warning-free in under 3 seconds.
 * **Active Port Settings:**
   - **Backend API:** Port `8000` (FastAPI + Uvicorn)
-  - **Frontend UI:** Port `3000` (Next.js + Turbopack)
+  - **Frontend UI:** Port `8080` (Vite + TanStack Router — **Lovable UI**)
   - **Database:** `database/smriti.db` (SQLite in WAL mode)
 
 ---
 
-## 2. Work Completed in this Session
+## 2. How to Run
 
-### 🔧 sqlite-vec Virtual Table Upsert Fix
-* **The Issue:** SQLite-vec `vec0` virtual tables do not support standard SQLite `INSERT OR REPLACE` or `ON CONFLICT` constraints. Re-indexing or upvoting threw a `UNIQUE constraint failed on edge_embeddings primary key` exception.
-* **The Fix:** Modified `upsert_edge_embedding` in [vector_store.py](file:///c:/Users/kkp18/OneDrive/Pictures/Documents/Smriti/backend/services/vector_store.py) to follow an idempotent `DELETE` then `INSERT` pattern. Re-indexing is now completely clean and warning-free.
+### Backend
+```powershell
+cd "C:\Users\kkp18\OneDrive\Pictures\Documents\Smriti"
+backend\.venv\Scripts\python -m uvicorn backend.main:app --port 8000 --reload
+```
+> **IMPORTANT:** Always run from the project root (`Smriti/`), not from inside `backend/`. The app imports use `from backend.xxx import ...` which requires the root on `sys.path`.
 
-### 🚀 Gemini API Upgrade (`gemini-1.5` ➔ `gemini-2.5`)
-* **The Issue:** The API key returned `404 NOT_FOUND` for `gemini-1.5-flash` because the 1.5 namespace is deprecated on the user's key (since the local runtime is in **July 2026**).
-* **The Fix:** Upgraded model paths across [rag_service.py](file:///c:/Users/kkp18/OneDrive/Pictures/Documents/Smriti/backend/services/rag_service.py), [extraction_client.py](file:///c:/Users/kkp18/OneDrive/Pictures/Documents/Smriti/backend/services/extraction_client.py), and [chat_service.py](file:///c:/Users/kkp18/OneDrive/Pictures/Documents/Smriti/backend/services/chat_service.py) to **`gemini-2.5-flash`**. Requests are now fully functional (200 OK).
-
-### 📱 Two-Way Interactive Telegram Mobile Copilot
-* **The Issue:** The Telegram bot was initially designed as a one-way alert broadcaster only.
-* **The Fix:** Created a background long-polling listener in [telegram_listener.py](file:///c:/Users/kkp18/OneDrive/Pictures/Documents/Smriti/backend/services/telegram_listener.py) that starts automatically on app startup. Technicians can now text `@smriti_alerts_bot` on their phone, and the bot responds with conversational Gemini RAG troubleshooting steps, references, and confidence scores!
-
-### ⚡ Eager Model Warmup on Startup
-* **The Issue:** Lazy-loading the `sentence-transformers` model on the first RAG or feedback API request caused a 5–10 second latency spike, resulting in `httpx.ReadTimeout` errors in the smoke test.
-* **The Fix:** Eagerly warm up the sentence embedder cache in `startup_event` in [main.py](file:///c:/Users/kkp18/OneDrive/Pictures/Documents/Smriti/backend/main.py). All subsequent requests now execute instantly.
-
-### 🧪 Fallback Unit Test Mocking
-* **The Fix:** Patched `tests/test_backend/test_chat.py` to temporarily override `settings.gemini_api_key` to `None` during offline fallback tests. This guarantees fallback assertions pass cleanly regardless of the API key state in the local `.env`.
+### Frontend (Lovable Vite UI)
+```powershell
+cd "C:\Users\kkp18\OneDrive\Pictures\Documents\Smriti\frontend"
+npm run dev
+```
+Open **http://localhost:8080** in the browser.
 
 ---
 
-## 3. End-to-End Features Handover
+## 3. Frontend Architecture (Lovable UI — NEW)
+
+The **Next.js frontend has been replaced** with a premium Vite + TanStack Router SPA built in Lovable.
+
+| Item | Detail |
+|---|---|
+| **Location** | `frontend/` (was `frontend_next_backup/`) |
+| **Tech Stack** | Vite v8 + React + TanStack Router + Tailwind CSS v4 + shadcn/ui |
+| **Main File** | `frontend/src/routes/index.tsx` (889 lines, single-page app) |
+| **Theme** | Dark obsidian (`#070A13`), glassmorphic cards, teal/emerald accents |
+| **API Base** | `http://127.0.0.1:8000` (hardcoded in `const API`) |
+
+### UI Sections
+- **Header:** Simulate Anomaly button, Re-run Ingest Pipelines button, SSE live status badge
+- **Left Column:** Operational Health KPIs, Equipment Search, Document Ingestion Hub, Technician ID
+- **Center Column:** Interactive SVG Topology Graph (`VLV-102a → P-102 → V-101`) with animated flow lines
+- **Right Column:** Remedy Diagnostics (upvote/downvote), Active Alerts Log (SSE-driven)
+- **Floating Widget:** AI Copilot chat drawer with camera upload (bottom-right)
+
+---
+
+## 4. Work Completed — Lovable UI Session
+
+### 🎨 Premium Lovable UI Migrated (`COMPLETED`)
+* Replaced old Next.js `frontend/` with the Lovable-built `velvet-echo-garden` Vite app.
+* Old Next.js app backed up to `frontend_next_backup/`.
+* Build verified: `✓ 1884 modules transformed` with 0 errors, 0 vulnerabilities.
+
+### 🔧 Frontend Bug Fixes (`COMPLETED`)
+1. **`crypto.randomUUID` polyfill** — `crypto.randomUUID()` only works on HTTPS. Added `genId()` fallback for `http://localhost`.
+2. **`/api/ingest/rerun` 404** — Endpoint was missing from backend. Added it to `main.py` as an alias for vector/sync.
+3. **`/api/feedback` 422 → 400** — Frontend was sending wrong field names (`technician` instead of `technician_id`) and wrong outcome values (`"up"/"down"` instead of `"confirmed"/"rejected"`). Fixed.
+4. **Fake edge IDs in feedback** — Frontend used hardcoded `"e-p102-v101"` IDs that don't exist in DB. Now loads real edge IDs from `GET /api/trace/P-102` on startup.
+5. **Flow lines invisible** — SVG gradient `stopOpacity` was `0.2` (nearly invisible). Raised to `0.8` and increased `strokeWidth` from `2.5` to `3.5`.
+
+### 🛠️ Backend Additions (`COMPLETED`)
+* Added `POST /api/ingest/rerun` endpoint to [main.py](file:///c:/Users/kkp18/OneDrive/Pictures/Documents/Smriti/backend/main.py) — syncs edge embeddings and is called by the dashboard "Re-run Ingest Pipelines" button.
+
+---
+
+## 5. End-to-End Features Handover
 
 ### 1. Hybrid RAG Pipeline (Cloud-First, Local-Second)
 * Calls Gemini 2.5 Flash when online.
-* If the API fails, times out, or has no internet/key, it gracefully falls back to local vector search (384-dim `all-MiniLM-L6-v2` embeddings in SQLite-vec) to synthesize a remedy response.
+* Graceful fallback to local vector search (384-dim `all-MiniLM-L6-v2` in SQLite-vec).
 
 ### 2. Proactive Telemetry Watcher
-* Evaluates live telemetry readings against rules in the SQLite DB.
-* If a signature matches, it fires an alert payload to:
-  - The dashboard UI using **Server-Sent Events (SSE)**.
-  - The technician's phone via the Telegram Bot API.
+* Evaluates live telemetry readings against DB rules.
+* Fires alerts to: SSE dashboard stream + Telegram Bot API.
+* **Simulate button** calls `POST /api/telemetry/simulate` with `{ equipment_id, metric, value, delta_pct }`.
 
 ### 3. Self-Learning Knowledge Graph
-* When a technician upvotes or downvotes a remedy on the dashboard, the system updates positive/negative feedback tallies and recalculates the Wilson lower bound confidence score.
-* Changes are re-embedded and synchronized with the sqlite-vec virtual table.
+* Upvote/downvote on remedies updates Wilson lower bound confidence score.
+* Changes re-embedded into sqlite-vec vector table.
+* Feedback uses real edge integer IDs fetched from `/api/trace/P-102` on load.
 
-### 4. Multimodal Camera Ingestion (Image Upload)
-* **Telegram:** Technicians can send a photo of a nameplate or piece of equipment to the bot. It automatically calls Gemini 2.5 Flash Vision to parse the image, extract the equipment tag, query its RAG troubleshooting steps, and reply on their phone.
-* **Web UI Dashboard:** Added a camera upload icon (`📷`) to the floating Chat Copilot drawer. Uploading an image parses the tag, runs RAG, and automatically shifts the active dashboard trace to show that equipment's live topology graph!
+### 4. Multimodal Camera Ingestion
+* Telegram: photo → Gemini Vision → equipment tag → RAG response.
+* Web UI: camera icon in chat drawer → `POST /api/chat/vision`.
 
 ### 5. Real-Time Document Ingestion Hub
-* **Multi-Format Upload:** Built a new **"Document Ingestion Hub"** panel on the web dashboard sidebar. Users can upload custom PDFs, scanned forms, emails, or spreadsheets.
-* **Extraction Processing:** Uploaded documents are saved, parsed dynamically by the Gemini 2.5 Flash pipeline (bypassing seed caches), verified by schema validators, and injected directly into the live relational and sqlite-vec vector database.
-* **Valid Demo Seeds:** 
-  - `datasets/sample_pid.pdf`: A ReportLab vector flowchart schematic drawing of valves and pumps.
-  - `datasets/sample_shift_notes.txt`: Unstructured text log of a pump mechanical seal repair.
-  - `datasets/sample_email_archive.txt`: Simulated operational email discussing P-102 and V-101.
-  - `datasets/sample_spreadsheet.csv`: A CSV database sheet listing rows of pump maintenance records.
+* Accepts `.pdf`, `.txt`, `.csv`, `.xlsx`, `.png`, `.jpg`.
+* Two endpoints: `POST /api/ingest/upload/pid` and `POST /api/ingest/upload/shift-notes`.
+* **Valid Demo Seeds:**
+  - `datasets/sample_pid.pdf` — ReportLab vector P&ID schematic.
+  - `datasets/sample_shift_notes.txt` — Pump mechanical seal repair log.
+  - `datasets/sample_email_archive.txt` — Operational email discussing P-102 and V-101.
+  - `datasets/sample_spreadsheet.csv` — CSV pump maintenance records.
 
 ### 6. Interactive Compliance PDF Exporter
-* **PDF Generation Engine:** Built [compliance_service.py](file:///c:/Users/kkp18/OneDrive/Pictures/Documents/Smriti/backend/services/compliance_service.py) using `reportlab` generating beautiful, highly formatted PDF reports of equipment details, physical topology connections, and safety remedy tables with confidence statistics.
-* **Web UI Button:** Placed a **"Export Compliance Audit PDF"** button under the Health KPIs card on the dashboard, streaming the generated PDF directly to the browser for download.
+* Built [compliance_service.py](file:///c:/Users/kkp18/OneDrive/Pictures/Documents/Smriti/backend/services/compliance_service.py) using `reportlab`.
+* Button on dashboard → `GET /api/compliance/export/{equipment_id}` → streamed PDF download.
+
+### 7. Two-Way Telegram Mobile Copilot
+* Long-polling listener in [telegram_listener.py](file:///c:/Users/kkp18/OneDrive/Pictures/Documents/Smriti/backend/services/telegram_listener.py).
+* Responds with Gemini RAG steps, confidence scores, and references.
 
 ---
 
-## 4. Suggested Next Steps for Claude 3.5 Sonnet
-1. **Frontend Styling Polish:** Upgrade `frontend/src/app/page.tsx` with premium dark-mode styling, smooth animations, and glassmorphic UI components.
-2. **Interactive SVG Topology Graph:** Add hover-states, animations, and node detail flyouts for P&ID equipment tags and connection lines.
-3. **Voice-to-Text Command Interface (Audio):** Add voice message transcription (Whisper/Gemini) to the Telegram listener.
-4. **Hackathon Pitch & Slide Deck:** Create a slide structure or pitch script summarizing the core features (Ingestion, Vision RAG, Local-second resilience, Watcher, Self-learning loop).
+## 6. Known Notes & Gotchas
+
+* **Hydration warning in browser console** — caused by Grammarly/QuillBot browser extensions injecting attributes into `<html>`. Not a bug. Use incognito mode for demos.
+* **CORS note** — Backend uses `allow_origins=["*"]`. The Lovable cloud preview (`lovable.app`) cannot call `127.0.0.1` due to browser Private Network Access policy. Always use `http://localhost:8080`.
+* **SQLite-vec upsert pattern** — `vec0` tables require `DELETE` then `INSERT` (no `ON CONFLICT`).
+* **Backend run path** — Must run uvicorn from project root `Smriti/`, not from inside `backend/`.
+
+---
+
+## 7. Suggested Next Steps
+1. **Real-time KPI fetch** — Wire the retention/dependency/compliance numbers to `GET /api/dashboard/metrics` instead of hardcoded values.
+2. **Trace on node click** — Clicking SVG nodes should call `/api/trace/{nodeId}` and update the remedy panel dynamically.
+3. **Chat real responses** — Wire the copilot chat to `POST /api/chat/ask` and display the real Gemini answer.
+4. **Voice-to-Text** — Add voice message transcription (Whisper/Gemini) to the Telegram listener.
+5. **Hackathon Pitch Deck** — Create a slide structure summarizing core features for judges.
