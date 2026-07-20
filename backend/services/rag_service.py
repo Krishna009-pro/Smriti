@@ -120,8 +120,11 @@ async def retrieve_and_answer(
                         "confidence": float(edges[0].confidence) if edges else 0.0,
                         "retrieval_mode": "cloud_rag_openrouter"
                     }
+                else:
+                    print(f"[-] OpenRouter RAG: HTTP {response.status_code} — {response.text[:400]}")
         except Exception as e:
-            print(f"[-] OpenRouter RAG call failed, trying standard Gemini: {e}")
+            print(f"[-] OpenRouter RAG call exception: {type(e).__name__}: {e}")
+
 
     if settings.gemini_api_key:
         try:

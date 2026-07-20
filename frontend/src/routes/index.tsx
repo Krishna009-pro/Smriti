@@ -258,6 +258,37 @@ function TopologyGraph({ onNodeClick, anomalyOn }: { onNodeClick: (id: string) =
   );
 }
 
+// ---------- simple inline markdown renderer ----------
+function MarkdownText({ text }: { text: string }) {
+  // Split on newlines first, then handle inline markers per segment
+  const lines = text.split("\n");
+  return (
+    <>
+      {lines.map((line, li) => {
+        // Parse inline markdown: **bold**, *italic*, `code`
+        const parts: React.ReactNode[] = [];
+        const regex = /(\*\*(.+?)\*\*|\*(.+?)\*|`(.+?)`)/g;
+        let last = 0;
+        let m: RegExpExecArray | null;
+        while ((m = regex.exec(line)) !== null) {
+          if (m.index > last) parts.push(line.slice(last, m.index));
+          if (m[2]) parts.push(<strong key={m.index} className="font-semibold text-white">{m[2]}</strong>);
+          else if (m[3]) parts.push(<em key={m.index}>{m[3]}</em>);
+          else if (m[4]) parts.push(<code key={m.index} className="bg-white/10 rounded px-1 text-teal-300 text-xs font-mono">{m[4]}</code>);
+          last = m.index + m[0].length;
+        }
+        if (last < line.length) parts.push(line.slice(last));
+        return (
+          <span key={li}>
+            {parts.length > 0 ? parts : line}
+            {li < lines.length - 1 && <br />}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
 // ---------- chat drawer ----------
 function ChatDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [messages, setMessages] = useState<ChatMsg[]>([
@@ -354,7 +385,7 @@ function ChatDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
                   : "bg-white/5 border border-white/10 text-white/90 rounded-bl-sm"
               }`}
             >
-              {m.text}
+              <MarkdownText text={m.text} />
             </div>
           </div>
         ))}
