@@ -124,7 +124,7 @@ def debug_status() -> Dict[str, Any]:
             f"AIza…{settings.gemini_api_key[-4:]}" if settings.gemini_api_key else "NOT SET"
         ),
         "openrouter_model": "google/gemini-2.5-flash",
-        "vision_model": "gemini-2.5-flash (direct Gemini API)",
+        "vision_model": "gemini-3.1-flash-lite (direct Gemini API)",
     }
 
 

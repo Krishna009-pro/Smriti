@@ -63,7 +63,8 @@ class ChatService:
                     "messages": [
                         {"role": "system", "content": system_instruction},
                         {"role": "user", "content": f"Database Context:\n{context_str}\n\nUser Question: {message}"}
-                    ]
+                    ],
+                    "max_tokens": 1000
                 }
                 async with httpx.AsyncClient() as client:
                     response = await client.post(url, json=payload, headers=headers, timeout=12.0)
@@ -71,12 +72,15 @@ class ChatService:
                         res_json = response.json()
                         text = res_json["choices"][0]["message"]["content"]
                         return text.strip()
+                    else:
+                        print(f"[-] ChatService OpenRouter: HTTP {response.status_code} — {response.text[:400]}")
             except Exception as e:
-                print(f"[-] OpenRouter API call failed, trying Gemini next: {e}")
+                print(f"[-] ChatService OpenRouter exception: {type(e).__name__}: {e}")
+
 
         if settings.gemini_api_key:
             try:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={settings.gemini_api_key}"
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key={settings.gemini_api_key}"
                 system_instruction = (
                     "You are 'Smriti Copilot', a helpful industrial assistant for refinery and plant operations. "
                     "Use the provided database context to answer the technician's question. "
