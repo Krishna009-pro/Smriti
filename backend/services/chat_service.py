@@ -42,7 +42,38 @@ class ChatService:
             except Exception as e:
                 context_str = f"Failed to retrieve database context for {equipment_id}: {e}\n"
 
-        # 3. If Gemini key is set, call Gemini API
+        # 3. Call LLM (OpenRouter or Gemini)
+        if settings.openrouter_api_key:
+            try:
+                url = "https://openrouter.ai/api/v1/chat/completions"
+                system_instruction = (
+                    "You are 'Smriti Copilot', a helpful industrial assistant for refinery and plant operations. "
+                    "Use the provided database context to answer the technician's question. "
+                    "Keep your answer concise, operational, and focused on safety and maintenance steps. "
+                    "If the context is empty, answer general plant operations questions."
+                )
+                headers = {
+                    "Authorization": f"Bearer {settings.openrouter_api_key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://smriti.os",
+                    "X-Title": "Smriti OS",
+                }
+                payload = {
+                    "model": "google/gemini-2.5-flash",
+                    "messages": [
+                        {"role": "system", "content": system_instruction},
+                        {"role": "user", "content": f"Database Context:\n{context_str}\n\nUser Question: {message}"}
+                    ]
+                }
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(url, json=payload, headers=headers, timeout=12.0)
+                    if response.status_code == 200:
+                        res_json = response.json()
+                        text = res_json["choices"][0]["message"]["content"]
+                        return text.strip()
+            except Exception as e:
+                print(f"[-] OpenRouter API call failed, trying Gemini next: {e}")
+
         if settings.gemini_api_key:
             try:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={settings.gemini_api_key}"

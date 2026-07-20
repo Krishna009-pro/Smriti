@@ -82,7 +82,40 @@ async def retrieve_and_answer(
     # 5. Build context payload
     context = build_fix_context(edges, node_map)
 
-    # 6. Cloud-First: Call Gemini API if key is available
+    # 6. Cloud-First: Call OpenRouter or Gemini API if key is available
+    if settings.openrouter_api_key:
+        try:
+            url = "https://openrouter.ai/api/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {settings.openrouter_api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://smriti.os",
+                "X-Title": "Smriti OS",
+            }
+            payload = {
+                "model": "google/gemini-2.5-flash",
+                "messages": [
+                    {"role": "system", "content": RAG_SYSTEM_PROMPT},
+                    {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {query}"}
+                ]
+            }
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, json=payload, headers=headers, timeout=12.0)
+                if response.status_code == 200:
+                    res_json = response.json()
+                    answer_text = res_json["choices"][0]["message"]["content"]
+                    return {
+                        "answer": answer_text.strip(),
+                        "retrieved_edges": [
+                            {"edge_id": e.id, "fix_name": node_map.get(e.target_id, KnowledgeNode(id=e.target_id, name=e.target_id)).name, "confidence": e.confidence}
+                            for e in edges
+                        ],
+                        "confidence": float(edges[0].confidence) if edges else 0.0,
+                        "retrieval_mode": "cloud_rag_openrouter"
+                    }
+        except Exception as e:
+            print(f"[-] OpenRouter RAG call failed, trying standard Gemini: {e}")
+
     if settings.gemini_api_key:
         try:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={settings.gemini_api_key}"

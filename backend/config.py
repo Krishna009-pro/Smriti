@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     llm_provider: str = "gemini"
     gemini_api_key: str | None = None
     anthropic_api_key: str | None = None
+    openrouter_api_key: str | None = None
     
     # Telegram Settings
     telegram_bot_token: str | None = None

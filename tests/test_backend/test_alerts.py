@@ -9,7 +9,7 @@ from sqlalchemy.orm import sessionmaker
 # Add project root to sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from backend.main import app, watcher, sse_listeners
+from backend.main import app, watcher, sse_listeners, alert_sender
 from backend.db.models import Base
 from backend.db.session import get_db
 from backend.services.ingestion_service import IngestionService
@@ -36,6 +36,12 @@ def setup_db():
     orig_session_factory = watcher.session_factory
     watcher.session_factory = TestingSessionLocal
     
+    # Mock Telegram calls to prevent hanging/network traffic
+    orig_send_alert = alert_sender.send_telegram_alert
+    async def mock_send_alert(*args, **kwargs):
+        return True
+    alert_sender.send_telegram_alert = mock_send_alert
+    
     Base.metadata.create_all(bind=engine)
     
     # Run cached ingestion to seed nodes/edges for the tests
@@ -52,6 +58,7 @@ def setup_db():
     # Tear down override
     app.dependency_overrides.clear()
     watcher.session_factory = orig_session_factory
+    alert_sender.send_telegram_alert = orig_send_alert
     Base.metadata.drop_all(bind=engine)
     if os.path.exists("test_alerts_temp.db"):
         try:
