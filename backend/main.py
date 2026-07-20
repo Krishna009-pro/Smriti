@@ -50,6 +50,13 @@ app = FastAPI(
 @app.on_event("startup")
 async def startup_event():
     await watcher.start()
+
+    # Print key presence at startup so we can confirm .env is loaded
+    print(f"[+] OPENROUTER_API_KEY loaded: {bool(settings.openrouter_api_key)} "
+          f"({'sk-or-…' + settings.openrouter_api_key[-4:] if settings.openrouter_api_key else 'NOT SET'})")
+    print(f"[+] GEMINI_API_KEY loaded:     {bool(settings.gemini_api_key)} "
+          f"({'AIza…' + settings.gemini_api_key[-4:] if settings.gemini_api_key else 'NOT SET'})")
+
     try:
         from backend.services.vector_store import init_vector_store
         from backend.services.rag_service import sync_edge_embeddings
@@ -72,6 +79,7 @@ async def startup_event():
         asyncio.create_task(start_telegram_listener(SessionLocal))
     except Exception as e:
         print(f"[-] Vector startup indexing failed: {e}")
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -104,6 +112,21 @@ def health_check() -> Dict[str, str]:
     Check application and database connectivity.
     """
     return {"status": "healthy", "service": "smriti-api"}
+
+@app.get("/api/debug/status")
+def debug_status() -> Dict[str, Any]:
+    """Check which API keys are loaded (safe — shows only last 4 chars)."""
+    return {
+        "openrouter_key": (
+            f"sk-or-…{settings.openrouter_api_key[-4:]}" if settings.openrouter_api_key else "NOT SET"
+        ),
+        "gemini_key": (
+            f"AIza…{settings.gemini_api_key[-4:]}" if settings.gemini_api_key else "NOT SET"
+        ),
+        "openrouter_model": "google/gemini-2.5-flash",
+        "vision_model": "gemini-2.5-flash (direct Gemini API)",
+    }
+
 
 # --- Ingestion Endpoints ---
 @app.post("/api/ingest/pid", status_code=status.HTTP_202_ACCEPTED)
