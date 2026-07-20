@@ -64,8 +64,10 @@ import anyio
 # Test the ChatService functionality directly
 def test_chat_service_fallback_with_equipment(db_session):
     from backend.config import settings
-    original_key = settings.gemini_api_key
+    original_gemini_key = settings.gemini_api_key
+    original_or_key = settings.openrouter_api_key
     settings.gemini_api_key = None
+    settings.openrouter_api_key = None
     try:
         async def run():
             chat_svc = ChatService(db_session)
@@ -75,12 +77,15 @@ def test_chat_service_fallback_with_equipment(db_session):
             assert "82.0%" in response
         anyio.run(run)
     finally:
-        settings.gemini_api_key = original_key
+        settings.gemini_api_key = original_gemini_key
+        settings.openrouter_api_key = original_or_key
 
 def test_chat_service_fallback_without_equipment(db_session):
     from backend.config import settings
-    original_key = settings.gemini_api_key
+    original_gemini_key = settings.gemini_api_key
+    original_or_key = settings.openrouter_api_key
     settings.gemini_api_key = None
+    settings.openrouter_api_key = None
     try:
         async def run():
             chat_svc = ChatService(db_session)
@@ -89,7 +94,8 @@ def test_chat_service_fallback_without_equipment(db_session):
             assert "Smriti AI assistant" in response or "Smriti Copilot" in response
         anyio.run(run)
     finally:
-        settings.gemini_api_key = original_key
+        settings.gemini_api_key = original_gemini_key
+        settings.openrouter_api_key = original_or_key
 
 # Test the API endpoint directly using FastAPI TestClient
 def test_chat_endpoint():
