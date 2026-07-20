@@ -329,16 +329,48 @@ async def semantic_search(request: SemanticSearchRequest, db: Session = Depends(
 
 @app.post("/api/chat/ask")
 async def chat_ask(request: ChatRequest, db: Session = Depends(get_db)):
-    """RAG-powered troubleshooting chat (Cloud-First, Local-Second)."""
-    from backend.services.rag_service import retrieve_and_answer
-    result = await retrieve_and_answer(
-        db, request.message, request.equipment_id, top_k=5
-    )
-    return {
-        "answer": result["answer"],
-        "retrieved_edges": result["retrieved_edges"],
-        "session_id": "web-session"
-    }
+    """
+    Smart chat routing:
+    - Equipment IDs or troubleshooting keywords → RAG pipeline (historical fixes, vector search)
+    - General / conversational queries → ChatService (natural LLM conversation)
+    """
+    import re
+
+    # Detect explicit equipment ID in message or request
+    eq_match = re.search(r'\b([PVTF]-\d+\w*|VLV-\d+\w*|P_\d+\w*)\b', request.message, re.IGNORECASE)
+    has_equipment = bool(eq_match) or bool(request.equipment_id)
+
+    # Keywords that imply a troubleshooting or maintenance intent
+    is_troubleshooting = bool(re.search(
+        r'\b(fix|repair|fault|fail|leak|pressure|vibration|alarm|trip|stuck|broken|'
+        r'incident|symptom|diagnos|error|issue|problem|history|historical|'
+        r'maintenance|seal|pump|valve|cavitat|critical|happening|occur|anomaly)\b',
+        request.message, re.IGNORECASE
+    ))
+
+    use_rag = has_equipment or is_troubleshooting
+
+    if use_rag:
+        from backend.services.rag_service import retrieve_and_answer
+        detected_eq = request.equipment_id or (eq_match.group(0).upper() if eq_match else None)
+        result = await retrieve_and_answer(db, request.message, detected_eq, top_k=5)
+        return {
+            "answer": result["answer"],
+            "retrieved_edges": result.get("retrieved_edges", []),
+            "session_id": "web-session",
+            "mode": result.get("retrieval_mode", "rag")
+        }
+    else:
+        # Conversational path — natural response via ChatService
+        service = ChatService(db)
+        response = await service.get_copilot_response(request.message)
+        return {
+            "answer": response,
+            "retrieved_edges": [],
+            "session_id": "web-session",
+            "mode": "conversational"
+        }
+
 
 @app.post("/api/vector/sync")
 def sync_vectors(db: Session = Depends(get_db)):
