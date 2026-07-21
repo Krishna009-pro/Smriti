@@ -1,0 +1,33 @@
+# Render blueprint (template). This file is a convenience for creating services
+# in Render via the render.yaml blueprint. Replace placeholders where
+# indicated and set secrets / env vars in the Render dashboard (do NOT
+# commit secrets here).
+
+services:
+  - type: web
+    name: smriti-api
+    env: docker
+    dockerfilePath: docker/Dockerfile.backend
+    plan: free
+    # Note: set environment variables (JWT secrets, API keys, DB URLs, etc.)
+    # in the Render dashboard for this service. Example env vars:
+    #   HOST: 0.0.0.0
+    #   PORT: 8000
+    #   DATABASE_URL: sqlite:///app/database/smriti.db
+    #   GEMINI_API_KEY: <your_key>
+
+  - type: static
+    name: smriti-frontend
+    env: static
+    buildCommand: "npm ci && npm run build"
+    publishPath: dist
+    plan: free
+    # IMPORTANT: set the following environment variable in Render for the
+    # static site service so the built frontend points to the API service.
+    # If you deploy both services in Render and your API gets a public
+    # URL like https://smriti-api.onrender.com, set:
+    #   - VITE_API_URL: https://smriti-api.onrender.com
+
+# If you prefer to run the frontend as a "web" (Docker) service instead,
+# change the frontend entry above to `type: web` and point to the
+# docker/Dockerfile.frontend (which builds and serves via nginx).
