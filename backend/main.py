@@ -3,8 +3,10 @@ from datetime import datetime
 from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
+from pydantic import BaseModel as PydanticBaseModel
+from typing import Optional as PydanticOptional
 
 from backend.config import settings
 from backend.models import (
@@ -204,35 +206,51 @@ async def upload_and_ingest_shift_notes(file: UploadFile = File(...), db: Sessio
         )
 
 # --- Graph Query & Feedback Endpoints ---
-@app.get("/api/trace/{equipment_id}", response_model=GraphTraceResult)
+@app.get("/api/trace/{equipment_id}")
 def trace_topology_and_history(equipment_id: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
     """
     Get structural connects_to neighbors (up to 3 hops) and ranked historical fixes.
+    Returns full UI Trace shape (rootId, nodes with x/y, edges, remedies, stats).
     """
-    return GraphService(db).trace_topology_and_history(equipment_id)
+    svc = GraphService(db)
+    graph_data = svc.trace_topology_and_history(equipment_id)
+    metrics    = svc.get_dashboard_metrics()
+    return build_ui_trace(equipment_id, graph_data, metrics)
 
-@app.post("/api/feedback", response_model=FeedbackResponse)
-def capture_feedback(feedback: FeedbackCreate, db: Session = Depends(get_db)) -> Dict[str, Any]:
+class UIFeedbackRequest(PydanticBaseModel):
+    """New-UI feedback shape: {remedyId, vote}."""
+    remedyId: str
+    vote: str  # 'confirm' | 'reject'
+
+@app.post("/api/feedback")
+def capture_feedback(body: dict, db: Session = Depends(get_db)) -> Dict[str, Any]:
     """
-    Submit technician feedback on whether a suggested fix worked, and update confidence.
+    Submit technician feedback. Accepts both:
+    - New UI shape:  {remedyId, vote}
+    - Legacy shape:  {edge_id, technician_id, outcome, note}
     """
+    # Detect new UI shape
+    if "remedyId" in body:
+        edge_id = body["remedyId"]
+        vote    = body["vote"]  # 'confirm' | 'reject'
+        outcome = "confirmed" if vote == "confirm" else "rejected"
+        technician_id = "dashboard-user"
+        note = None
+    else:
+        edge_id       = body.get("edge_id", "")
+        technician_id = body.get("technician_id", "dashboard-user")
+        outcome       = body.get("outcome", "confirmed")
+        note          = body.get("note")
     try:
-        result = GraphService(db).record_feedback(
-            feedback.edge_id,
-            feedback.technician_id,
-            feedback.outcome,
-            feedback.note
-        )
+        result = GraphService(db).record_feedback(edge_id, technician_id, outcome, note)
         return {
-            "id": result["feedback_id"],
-            "edge_id": result["edge_id"],
-            "technician_id": str(feedback.technician_id),
-            "outcome": result["outcome"],
-            "note": feedback.note,
-            "timestamp": datetime.utcnow()
+            "ok":      True,
+            "remedyId": edge_id,
+            "delta":   result.get("confidence", 0.0),
         }
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        # Edge may not exist yet (optimistic UI) — return ok anyway
+        return {"ok": True, "remedyId": edge_id, "delta": 0.0}
 
 # --- Compliance Endpoint ---
 @app.get("/api/compliance", response_model=List[EdgeResponse])
@@ -257,17 +275,28 @@ def alerts_stream():
     Server-Sent Events (SSE) stream for real-time proactive telemetry alerts.
     """
     async def event_generator():
-        import json
+        import json, time
         queue = asyncio.Queue()
         sse_listeners.append(queue)
+        # Send hello event so client sets status → 'live'
+        yield "event: hello\ndata: {}\n\n"
         try:
             while True:
                 try:
-                    alert = await asyncio.wait_for(queue.get(), timeout=10.0)
-                    yield f"data: {json.dumps(alert)}\n\n"
+                    alert = await asyncio.wait_for(queue.get(), timeout=15.0)
+                    # Ensure required UI fields are present
+                    if "id" not in alert:
+                        alert["id"] = f"a-{int(time.time()*1000)}"
+                    if "timestamp" not in alert:
+                        alert["timestamp"] = int(time.time() * 1000)
+                    if "tag" not in alert:
+                        alert["tag"] = "anomaly"
+                    if "severity" not in alert:
+                        alert["severity"] = "warning"
+                    yield f"event: alert\ndata: {json.dumps(alert)}\n\n"
                     queue.task_done()
                 except asyncio.TimeoutError:
-                    yield "comment: keepalive\n\n"
+                    yield ": keepalive\n\n"
         except asyncio.CancelledError:
             pass
         finally:
@@ -279,17 +308,28 @@ def alerts_stream():
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 @app.post("/api/telemetry/simulate", status_code=status.HTTP_200_OK)
-async def trigger_telemetry_simulation(reading: TelemetryReading) -> Dict[str, Any]:
+async def trigger_telemetry_simulation(reading: PydanticOptional[TelemetryReading] = None) -> Dict[str, Any]:
     """
-    Simulate a live telemetry reading, feeding it into the TelemetryWatcher queue.
+    Simulate a live telemetry reading. Body is optional — defaults to P-102 pressure drop.
+    Returns {ok, alert} shape expected by the dashboard frontend.
     """
-    reading_dict = reading.dict()
+    import time, random
+    reading_dict = {
+        "equipment_id": "P-102",
+        "metric": "pressure",
+        "value": 50.0,
+        "delta_pct": 20.0
+    } if reading is None else reading.dict()
     await watcher.telemetry_queue.put(reading_dict)
-    return {
-        "status": "triggered",
-        "reading": reading_dict,
-        "alert_sent": True
+    alert = {
+        "id":        f"a-{int(time.time() * 1000)}-sim",
+        "tag":       "anomaly",
+        "severity":  "critical",
+        "message":   f"Simulated anomaly on {reading_dict['equipment_id']} — {reading_dict['metric']} spike ({reading_dict['delta_pct']}% delta).",
+        "nodeId":    reading_dict["equipment_id"],
+        "timestamp": int(time.time() * 1000),
     }
+    return {"ok": True, "alert": alert}
 
 @app.post("/api/alerts/trigger", status_code=status.HTTP_200_OK)
 async def trigger_alert_manually(equipment_id: str, symptom: str) -> Dict[str, Any]:
@@ -333,13 +373,147 @@ def demo_engineer_only(current_user: User = Depends(RoleChecker(["engineer", "ma
         "role": current_user.role
     }
 
-from pydantic import BaseModel as PydanticBaseModel
-from typing import Optional as PydanticOptional
-
 class SemanticSearchRequest(PydanticBaseModel):
     query: str
     equipment_id: PydanticOptional[str] = None
     top_k: int = 5
+
+# ---- UI shape helpers -------------------------------------------------------
+
+def _node_ui_type(node_id: str, node_type: str, node_name: str) -> str:
+    """Map backend node type/id to frontend NodeType."""
+    nid = (node_id or "").upper()
+    nn = (node_name or "").lower()
+    if node_type in ("fix", "procedure"):
+        return "fix"
+    if nid.startswith("VLV") or "valve" in nn:
+        return "valve"
+    if nid.startswith("T-") or "tank" in nn or "vessel" in nn:
+        return "tank"
+    return "equipment"
+
+def _layout_positions(nodes, root_id: str):
+    """Assign x,y SVG positions to nodes by type."""
+    # Bucket by type
+    equipment_nodes = []
+    valve_nodes     = []
+    tank_nodes      = []
+    fix_nodes       = []
+    for n in nodes:
+        t = _node_ui_type(n["id"], n["type"], n["name"])
+        if t == "valve":     valve_nodes.append(n["id"])
+        elif t == "tank":    tank_nodes.append(n["id"])
+        elif t == "fix":     fix_nodes.append(n["id"])
+        else:                equipment_nodes.append(n["id"])
+
+    pos = {}
+    # Root equipment → center
+    cx, cy = 300, 220
+    eq_other = [e for e in equipment_nodes if e != root_id]
+    pos[root_id] = (cx, cy)
+    for i, nid in enumerate(eq_other):
+        pos[nid] = (cx + (i + 1) * 140, cy - 60 + i * 80)
+    # Valves → left side
+    for i, nid in enumerate(valve_nodes):
+        pos[nid] = (70, 100 + i * 160)
+    # Tanks → right side
+    for i, nid in enumerate(tank_nodes):
+        pos[nid] = (540, 100 + i * 160)
+    # Fix nodes → bottom row, centred
+    total = len(fix_nodes)
+    for i, nid in enumerate(fix_nodes):
+        x = cx - (total - 1) * 70 + i * 140
+        pos[nid] = (x, 430)
+    return pos
+
+def build_ui_trace(equipment_id: str, graph_data: dict, metrics: dict) -> dict:
+    """Transform GraphService output + metrics into the UI Trace shape."""
+    raw_nodes = graph_data.get("nodes", [])
+    raw_edges = graph_data.get("edges", [])
+
+    # Normalise SQLAlchemy objects → plain dicts if needed
+    def to_dict(obj):
+        if isinstance(obj, dict): return obj
+        return {c.key: getattr(obj, c.key) for c in obj.__table__.columns}
+
+    raw_nodes = [to_dict(n) for n in raw_nodes]
+    raw_edges = [to_dict(e) for e in raw_edges]
+
+    # Build node list with positions
+    pos = _layout_positions(raw_nodes, equipment_id)
+
+    ui_nodes = []
+    for n in raw_nodes:
+        nid  = n["id"]
+        props = n.get("properties") or {}
+        ui_nodes.append({
+            "id":    nid,
+            "label": nid,
+            "type":  _node_ui_type(nid, n.get("type", "equipment"), n.get("name", "")),
+            "x":     pos.get(nid, (300, 220))[0],
+            "y":     pos.get(nid, (300, 220))[1],
+            "anomaly": (nid == equipment_id),
+            "meta":  {
+                "name":   n.get("name", nid),
+                **{str(k): str(v) for k, v in props.items()},
+            },
+        })
+
+    # Build edges
+    fix_edges = []
+    ui_edges = []
+    for e in raw_edges:
+        edge_type = e.get("relation_type") or e.get("type", "connects_to")
+        ui_edge = {
+            "id":         e["id"],
+            "source":     e.get("source_id") or e.get("source", ""),
+            "target":     e.get("target_id") or e.get("target", ""),
+            "type":       edge_type,
+            "confidence": e.get("confidence", 0.5),
+        }
+        ui_edges.append(ui_edge)
+        if edge_type == "has_known_fix":
+            fix_edges.append(e)
+
+    # Build remedies from has_known_fix edges
+    node_names = {n["id"]: n.get("name", n["id"]) for n in raw_nodes}
+    remedies = []
+    for i, e in enumerate(fix_edges):
+        src = e.get("source_id") or e.get("source", "")
+        tgt = e.get("target_id") or e.get("target", "")
+        symptom = e.get("symptom_description") or f"Operational issue on {src}."
+        action  = node_names.get(tgt, tgt)
+        stype   = e.get("source_type") or "shift_note"
+        # Normalise source_type to enum accepted by frontend
+        if stype not in ("shift_note", "pid", "feedback"):
+            stype = "shift_note"
+        remedies.append({
+            "id":           e["id"],
+            "nodeId":       src,
+            "symptom":      symptom,
+            "action":       action,
+            "confidence":   float(e.get("confidence", 0.5)),
+            "source":       stype,
+            "sourceExcerpt": e.get("source_excerpt") or "",
+            "status":       "pending",
+        })
+
+    stats = {
+        "nodes":           len(ui_nodes),
+        "activeTraces":    len([r for r in remedies if r["status"] == "pending"]),
+        "anomalies24h":    len([e for e in raw_edges if e.get("relation_type") == "has_known_fix"]),
+        "contextRetained": int(metrics.get("context_retained_pct", 0)),
+        "expertDependency": int(metrics.get("expert_dependency_score", 0)),
+        "complianceFlags":  int(metrics.get("compliance_flags_count", 0)),
+    }
+
+    return {
+        "rootId":   equipment_id,
+        "nodes":    ui_nodes,
+        "edges":    ui_edges,
+        "remedies": remedies,
+        "stats":    stats,
+    }
 
 @app.post("/api/search/semantic")
 async def semantic_search(request: SemanticSearchRequest, db: Session = Depends(get_db)):
@@ -350,8 +524,15 @@ async def semantic_search(request: SemanticSearchRequest, db: Session = Depends(
     )
     return result
 
+class UIChatRequest(PydanticBaseModel):
+    """New-UI chat shape: {question, equipmentId}."""
+    question: PydanticOptional[str] = None
+    message:  PydanticOptional[str] = None   # legacy compat
+    equipmentId: PydanticOptional[str] = None
+    equipment_id: PydanticOptional[str] = None   # legacy compat
+
 @app.post("/api/chat/ask")
-async def chat_ask(request: ChatRequest, db: Session = Depends(get_db)):
+async def chat_ask(request: UIChatRequest, db: Session = Depends(get_db)):
     """
     Smart chat routing:
     - Equipment IDs or troubleshooting keywords → RAG pipeline (historical fixes, vector search)
@@ -359,24 +540,28 @@ async def chat_ask(request: ChatRequest, db: Session = Depends(get_db)):
     """
     import re
 
+    # Accept both {question, equipmentId} (new UI) and {message, equipment_id} (legacy)
+    user_msg  = request.question or request.message or ""
+    equip_ctx = request.equipmentId or request.equipment_id
+
     # Detect explicit equipment ID in message or request
-    eq_match = re.search(r'\b([PVTF]-\d+\w*|VLV-\d+\w*|P_\d+\w*)\b', request.message, re.IGNORECASE)
-    has_equipment = bool(eq_match) or bool(request.equipment_id)
+    eq_match = re.search(r'\b([PVTF]-\d+\w*|VLV-\d+\w*|P_\d+\w*)\b', user_msg, re.IGNORECASE)
+    has_equipment = bool(eq_match) or bool(equip_ctx)
 
     # Keywords that imply a troubleshooting or maintenance intent
     is_troubleshooting = bool(re.search(
         r'\b(fix|repair|fault|fail|leak|pressure|vibration|alarm|trip|stuck|broken|'
         r'incident|symptom|diagnos|error|issue|problem|history|historical|'
         r'maintenance|seal|pump|valve|cavitat|critical|happening|occur|anomaly)\b',
-        request.message, re.IGNORECASE
+        user_msg, re.IGNORECASE
     ))
 
     use_rag = has_equipment or is_troubleshooting
 
     if use_rag:
         from backend.services.rag_service import retrieve_and_answer
-        detected_eq = request.equipment_id or (eq_match.group(0).upper() if eq_match else None)
-        result = await retrieve_and_answer(db, request.message, detected_eq, top_k=5)
+        detected_eq = equip_ctx or (eq_match.group(0).upper() if eq_match else None)
+        result = await retrieve_and_answer(db, user_msg, detected_eq, top_k=5)
         return {
             "answer": result["answer"],
             "retrieved_edges": result.get("retrieved_edges", []),
@@ -386,7 +571,7 @@ async def chat_ask(request: ChatRequest, db: Session = Depends(get_db)):
     else:
         # Conversational path — natural response via ChatService
         service = ChatService(db)
-        response = await service.get_copilot_response(request.message)
+        response = await service.get_copilot_response(user_msg)
         return {
             "answer": response,
             "retrieved_edges": [],
@@ -397,10 +582,10 @@ async def chat_ask(request: ChatRequest, db: Session = Depends(get_db)):
 
 @app.post("/api/vector/sync")
 def sync_vectors(db: Session = Depends(get_db)):
-    """Rebuild all edge embeddings (run after ingestion)."""
+    """Rebuild all edge embeddings (run after ingestion). Returns {ok, embedded} for the UI."""
     from backend.services.rag_service import sync_edge_embeddings
     count = sync_edge_embeddings(db)
-    return {"status": "synced", "edges_embedded": count}
+    return {"ok": True, "embedded": count, "status": "synced", "edges_embedded": count}
 
 @app.post("/api/ingest/rerun", status_code=status.HTTP_200_OK)
 def rerun_ingest_pipelines(db: Session = Depends(get_db)) -> Dict[str, Any]:
