@@ -46,18 +46,30 @@ export function Copilot({ equipmentId }: CopilotProps) {
   useEffect(() => {
     const el = containerRef.current
     if (!el || typeof ResizeObserver === 'undefined') return
+    const MIN_W = 280
+    const MIN_H = 240
     const ro = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const cr = entry.contentRect
-        const newSize = { width: Math.round(cr.width), height: Math.round(cr.height) }
+        // Ignore transient measurements (may be zero during mount/animation)
+        const measuredW = Math.round(cr.width)
+        const measuredH = Math.round(cr.height)
+        if (measuredW <= 0 || measuredH <= 0) continue
+
+        // Clamp to sensible minimums to avoid saving tiny animated sizes
+        const clamped = {
+          width: Math.max(measuredW, MIN_W),
+          height: Math.max(measuredH, MIN_H),
+        }
+
         setSize((prev) => {
-          if (prev.width === newSize.width && prev.height === newSize.height) return prev
+          if (prev.width === clamped.width && prev.height === clamped.height) return prev
           try {
-            localStorage.setItem('copilot-size', JSON.stringify(newSize))
+            localStorage.setItem('copilot-size', JSON.stringify(clamped))
           } catch (e) {
             // ignore
           }
-          return newSize
+          return clamped
         })
       }
     })
