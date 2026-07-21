@@ -3,6 +3,8 @@ import type { Alert, SseStatus } from '@/lib/types'
 
 const BACKOFF = [1000, 2000, 4000, 8000, 16000, 30000]
 
+const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? ''
+
 export function useSSE(onAlert: (alert: Alert) => void) {
   const [status, setStatus] = useState<SseStatus>('reconnecting')
   const onAlertRef = useRef(onAlert)
@@ -16,7 +18,8 @@ export function useSSE(onAlert: (alert: Alert) => void) {
     if (typeof window === 'undefined') return
     setStatus('reconnecting')
 
-    const es = new EventSource('/api/alerts/stream')
+    const sseUrl = API_BASE ? `${API_BASE}/api/alerts/stream` : '/api/alerts/stream'
+    const es = new EventSource(sseUrl)
     esRef.current = es
 
     es.addEventListener('hello', () => {
