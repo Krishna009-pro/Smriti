@@ -22,9 +22,10 @@ services:
       context: .
       dockerfile: docker/Dockerfile.frontend
     ports:
-      - "3000:3000"
+      - "3000:80"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      # For Vite-built apps use VITE_ prefix; point to backend service on the Docker network
+      - VITE_API_URL=http://backend:8000
     depends_on:
       - backend
     restart: always

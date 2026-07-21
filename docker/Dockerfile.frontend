@@ -1,39 +1,28 @@
-FROM node:18-alpine AS base
+# Vite production build, served by nginx
+FROM node:18-alpine AS builder
 
 WORKDIR /app
 
-# Install dependencies only when needed
+# Install dependencies
 COPY frontend/package*.json ./
-RUN npm ci
+RUN npm ci --silent
 
-# Copy source files
+# Copy source files and build
 COPY frontend/ ./
-
-# Disable Next.js telemetry during build
-ENV NEXT_TELEMETRY_DISABLED=1
-
 RUN npm run build
 
-# Production image, copy all the files and run next
-FROM node:18-alpine AS runner
-WORKDIR /app
+# Production image (nginx)
+FROM nginx:alpine AS runner
+WORKDIR /usr/share/nginx/html
 
-ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
+# Remove default nginx static files
+RUN rm -rf ./*
 
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+# Copy built assets from builder
+COPY --from=builder /app/dist ./
 
-COPY --from=base /app/public ./public
-COPY --from=base --chown=nextjs:nodejs /app/.next ./.next
-COPY --from=base /app/node_modules ./node_modules
-COPY --from=base /app/package.json ./package.json
+# Expose port 80
+EXPOSE 80
 
-USER nextjs
-
-EXPOSE 3000
-
-ENV PORT=3000
-ENV HOSTNAME="0.0.0.0"
-
-CMD ["npm", "start"]
+# Start nginx
+CMD ["nginx", "-g", "daemon off;"]

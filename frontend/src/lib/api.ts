@@ -12,24 +12,30 @@ interface ChatAskResponse {
   mode?: string
 }
 
+const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? ''
+function url(path: string) {
+  if (!BASE) return path
+  return BASE.replace(/\/$/, '') + (path.startsWith('/') ? path : '/' + path)
+}
+
 export const api = {
   getTrace: (id: string) =>
-    fetch(`/api/trace/${encodeURIComponent(id)}`).then((r) => json<Trace>(r)),
+    fetch(url(`/api/trace/${encodeURIComponent(id)}`)).then((r) => json<Trace>(r)),
 
   simulateAnomaly: () =>
-    fetch('/api/telemetry/simulate', { method: 'POST' }).then((r) =>
+    fetch(url('/api/telemetry/simulate'), { method: 'POST' }).then((r) =>
       json<{ ok: boolean; alert: import('./types').Alert }>(r),
     ),
 
   sendFeedback: (remedyId: string, vote: 'confirm' | 'reject') =>
-    fetch('/api/feedback', {
+    fetch(url('/api/feedback'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ remedyId, vote }),
     }).then((r) => json<{ ok: boolean; remedyId: string; delta: number }>(r)),
 
   syncVectors: () =>
-    fetch('/api/vector/sync', { method: 'POST' }).then((r) =>
+    fetch(url('/api/vector/sync'), { method: 'POST' }).then((r) =>
       json<{ ok: boolean; embedded: number }>(r),
     ),
 
@@ -37,7 +43,7 @@ export const api = {
    * POST /api/chat/ask — returns JSON payload string with answer, mode, and retrieved edges.
    */
   askChat: async (question: string, equipmentId?: string): Promise<string> => {
-    const res = await fetch('/api/chat/ask', {
+    const res = await fetch(url('/api/chat/ask'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ question, equipmentId }),
@@ -58,7 +64,7 @@ export const api = {
     const form = new FormData()
     form.append('file', file)
     if (equipmentId) form.append('equipment_id', equipmentId)
-    const res = await fetch('/api/chat/vision', { method: 'POST', body: form })
+    const res = await fetch(url('/api/chat/vision'), { method: 'POST', body: form })
     if (!res.ok) throw new Error(`Vision request failed: ${res.status}`)
     const data = await res.json()
     return JSON.stringify({
