@@ -26,6 +26,44 @@ export function Copilot({ equipmentId }: CopilotProps) {
   ])
   const fileRef = useRef<HTMLInputElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const [size, setSize] = useState<{ width?: number; height?: number }>({})
+
+  // Load persisted size from localStorage on mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('copilot-size')
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        setSize(parsed)
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, [])
+
+  // Persist size whenever it changes via ResizeObserver
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const cr = entry.contentRect
+        const newSize = { width: Math.round(cr.width), height: Math.round(cr.height) }
+        setSize((prev) => {
+          if (prev.width === newSize.width && prev.height === newSize.height) return prev
+          try {
+            localStorage.setItem('copilot-size', JSON.stringify(newSize))
+          } catch (e) {
+            // ignore
+          }
+          return newSize
+        })
+      }
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [containerRef.current])
 
   // Pre-fill from selected node.
   useEffect(() => {
@@ -116,12 +154,19 @@ export function Copilot({ equipmentId }: CopilotProps) {
       <AnimatePresence>
         {open && (
           <motion.div
+            ref={containerRef}
             initial={{ opacity: 0, y: 30, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 30, scale: 0.96 }}
             transition={{ type: 'spring', stiffness: 300, damping: 28 }}
             className="glass fixed bottom-6 right-6 z-50 flex h-[560px] w-[calc(100vw-3rem)] max-w-[380px] flex-col overflow-auto rounded-2xl border border-border shadow-2xl"
-            style={{ resize: 'both', minWidth: 280, minHeight: 240 }}
+            style={{
+              resize: 'both',
+              minWidth: 280,
+              minHeight: 240,
+              width: size.width ? `${size.width}px` : undefined,
+              height: size.height ? `${size.height}px` : undefined,
+            }}
           >
             {/* Header */}
             <div className="flex items-center justify-between border-b border-border px-4 py-3">
