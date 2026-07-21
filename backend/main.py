@@ -126,16 +126,11 @@ def read_root():
         "health": "/health"
     }
 
-# CORS middleware config
+# CORS middleware config — allow all origins for public frontend & Vercel preview deployments
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:8080",
-        "http://localhost:3000",
-        "https://smriti-three.vercel.app",
-    ],
-    allow_origin_regex=r"https://smriti.*\.vercel\.app",
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

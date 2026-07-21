@@ -205,7 +205,7 @@ function NodeShape({
   const shape = () => {
     switch (node.type) {
       case 'equipment':
-        return <circle r={size} />
+        return <circle cx={0} cy={0} r={size} />
       case 'valve':
         return (
           <rect
@@ -246,17 +246,21 @@ function NodeShape({
           {[0, 0.6].map((d) => (
             <motion.circle
               key={d}
+              cx={0}
+              cy={0}
               r={size}
               fill="none"
               stroke="var(--critical)"
               strokeWidth={2}
-              animate={{ r: [size, size + 26], opacity: [0.6, 0] }}
+              initial={{ scale: 1, opacity: 0.6 }}
+              animate={{ scale: 2, opacity: 0 }}
               transition={{
                 duration: 1.8,
                 repeat: Infinity,
                 ease: 'easeOut',
                 delay: d,
               }}
+              style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
             />
           ))}
         </>
@@ -265,6 +269,8 @@ function NodeShape({
       {/* Selection ring */}
       {selected && (
         <circle
+          cx={0}
+          cy={0}
           r={size + 9}
           fill="none"
           stroke={color}
