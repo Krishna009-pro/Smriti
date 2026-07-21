@@ -59,6 +59,33 @@ async def startup_event():
     print(f"[+] GEMINI_API_KEY loaded:     {bool(settings.gemini_api_key)} "
           f"({'AIza…' + settings.gemini_api_key[-4:] if settings.gemini_api_key else 'NOT SET'})")
 
+    # Ensure database tables exist and auto-seed if empty
+    try:
+        from backend.db.session import engine, Base, SessionLocal
+        from backend.db.models import KnowledgeNode, User
+        from backend.auth.security import hash_password
+        Base.metadata.create_all(bind=engine)
+        print("[+] Database tables created/verified successfully.")
+
+        db_init = SessionLocal()
+        try:
+            if db_init.query(KnowledgeNode).first() is None:
+                print("[*] Empty database detected — auto-seeding initial graph nodes...")
+                if db_init.query(User).filter(User.username == "TECH-01").first() is None:
+                    db_init.add(User(username="TECH-01", hashed_password=hash_password("password123"), role="technician"))
+                    db_init.add(User(username="ENG-01", hashed_password=hash_password("password123"), role="engineer"))
+                    db_init.commit()
+
+                from backend.services.ingestion_service import IngestionService
+                ingest = IngestionService(db_init)
+                ingest.ingest_pid("pid_document.pdf", use_cache=True)
+                ingest.ingest_shift_notes("shift_notes.txt", use_cache=True)
+                print("[+] Initial knowledge graph auto-seeded successfully.")
+        finally:
+            db_init.close()
+    except Exception as e:
+        print(f"[-] Database initialization/seeding warning: {e}")
+
     try:
         from backend.services.vector_store import init_vector_store
         from backend.services.rag_service import sync_edge_embeddings

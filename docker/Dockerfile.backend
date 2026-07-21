@@ -11,9 +11,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY backend/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy backend app and AI package
+# Copy backend app, AI package, database, datasets, and scripts
 COPY backend/ ./backend/
 COPY ai/ ./ai/
+COPY database/ ./database/
+COPY datasets/ ./datasets/
+COPY scripts/ ./scripts/
 
 # Install the AI package in editable/local mode (if present)
 RUN if [ -d "./ai" ]; then pip install --no-cache-dir -e ./ai || true; fi
