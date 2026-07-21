@@ -28,14 +28,21 @@ export function Copilot({ equipmentId }: CopilotProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [size, setSize] = useState<{ width?: number; height?: number }>({})
+  const MIN_W = 280
+  const MIN_H = 240
 
-  // Load persisted size from localStorage on mount
+  // Load persisted size from localStorage on mount (clamped to minimums)
   useEffect(() => {
     try {
       const raw = localStorage.getItem('copilot-size')
       if (raw) {
         const parsed = JSON.parse(raw)
-        setSize(parsed)
+        const w = Number(parsed?.width) || 0
+        const h = Number(parsed?.height) || 0
+        if (w > 0 && h > 0) {
+          const clamped = { width: Math.max(w, MIN_W), height: Math.max(h, MIN_H) }
+          setSize(clamped)
+        }
       }
     } catch (e) {
       // ignore
@@ -46,8 +53,6 @@ export function Copilot({ equipmentId }: CopilotProps) {
   useEffect(() => {
     const el = containerRef.current
     if (!el || typeof ResizeObserver === 'undefined') return
-    const MIN_W = 280
-    const MIN_H = 240
     const ro = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const cr = entry.contentRect
