@@ -21,6 +21,11 @@ source .venv/bin/activate
 # Run pytest from the root folder
 cd ..
 pytest
+
+
+# start from root folder
+backend\.venv\Scripts\python -m uvicorn backend.main:app --port 8000 --reload
+
 ```
 
 ### Frontend Tests

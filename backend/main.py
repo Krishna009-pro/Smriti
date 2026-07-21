@@ -548,15 +548,21 @@ async def chat_ask(request: UIChatRequest, db: Session = Depends(get_db)):
     eq_match = re.search(r'\b([PVTF]-\d+\w*|VLV-\d+\w*|P_\d+\w*)\b', user_msg, re.IGNORECASE)
     has_equipment = bool(eq_match) or bool(equip_ctx)
 
-    # Keywords that imply a troubleshooting or maintenance intent
+    # Explicit check for platform/system queries that shouldn't search equipment vector database
+    is_system_query = bool(re.search(
+        r'\b(telegram|alert|bot|vote|voting|website|graph|how to|who are you|about you)\b',
+        user_msg, re.IGNORECASE
+    )) and not has_equipment
+
+    # Keywords that imply a physical equipment troubleshooting intent
     is_troubleshooting = bool(re.search(
-        r'\b(fix|repair|fault|fail|leak|pressure|vibration|alarm|trip|stuck|broken|'
+        r'\b(fix|repair|fault|fail|leak|pressure|vibration|trip|stuck|broken|'
         r'incident|symptom|diagnos|error|issue|problem|history|historical|'
-        r'maintenance|seal|pump|valve|cavitat|critical|happening|occur|anomaly)\b',
+        r'maintenance|seal|pump|valve|cavitation|anomaly)\b',
         user_msg, re.IGNORECASE
     ))
 
-    use_rag = has_equipment or is_troubleshooting
+    use_rag = (has_equipment or is_troubleshooting) and not is_system_query
 
     if use_rag:
         from backend.services.rag_service import retrieve_and_answer
@@ -569,7 +575,7 @@ async def chat_ask(request: UIChatRequest, db: Session = Depends(get_db)):
             "mode": result.get("retrieval_mode", "rag")
         }
     else:
-        # Conversational path — natural response via ChatService
+        # Conversational / System Knowledge path — clear, reference-free natural response
         service = ChatService(db)
         response = await service.get_copilot_response(user_msg)
         return {

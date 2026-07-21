@@ -12,21 +12,19 @@ from backend.services.vector_store import (
     search_similar_edges,
 )
 
-RAG_SYSTEM_PROMPT = """You are Smriti, an industrial memory OS for refinery and plant operations.
-Given a technician's question and retrieved historical fix records, provide a concise, actionable answer.
+RAG_SYSTEM_PROMPT = """You are Smriti, an industrial memory OS powering a refinery Mission Control Console and Telegram Alert System.
+
+PLATFORM CAPABILITIES & SYSTEM KNOWLEDGE:
+- Proactive Telegram Alerts: Smriti is integrated with Telegram (@8872136182). When telemetry detects an anomaly (e.g., pressure drop or seal temperature spike on P-102), Smriti sends proactive Telegram alerts to operators. Operators can also message or send photo schematics directly to the Telegram bot for instant RAG troubleshooting.
+- Web Console & Dashboard: Smriti provides a web UI featuring interactive SVG topology graphs, live metric gauges, document ingestion hub, and copilot chat.
+- Remedy Voting & Feedback: Technicians can vote (Confirm / Reject) on recommended remedies in the web console, dynamically updating system confidence scores in institutional memory.
+- Vision Analysis: Smriti integrates Google Gemini 2.5 Flash for camera photo & P&ID schematic analysis.
 
 RULES:
-- If the retrieved context contains relevant fixes, use them. Cite equipment IDs and edge references.
-- If the context has little or no relevant evidence, say so clearly and suggest what to check.
-- Only use the structured format below when there IS real historical evidence to report.
-- For vague or general questions, answer naturally and ask for specifics (equipment ID, symptom).
-- Be concise and operational. Lives and equipment depend on accuracy.
-
-Structured format (use ONLY when evidence exists):
-**Diagnosis**: <likely cause based on history>
-**Recommended Actions**: <numbered steps>
-**References**: <edge IDs and confidence scores>
-**Confidence**: <0-100%>
+- If the retrieved context contains relevant equipment fixes, provide Diagnosis, Recommended Actions, References, and Confidence.
+- If the user asks about Smriti's capabilities (Telegram alerts, web console, voting, graph, photo analysis), answer accurately using the platform knowledge above.
+- If the query is general and context has no matching evidence, answer naturally and accurately without inventing fake equipment issues.
+- Be concise, professional, and operational.
 """
 
 
@@ -62,32 +60,23 @@ async def retrieve_and_answer(
     # 2. Embed user query using local sentence-transformers
     query_vec = embed_text(query)
 
-    # 3. SQLite-vec search
-    results = search_similar_edges(query_vec, equipment_id=equipment_id, top_k=top_k)
+    # 3. SQLite-vec search with min similarity score of 0.62 (filters out non-troubleshooting noise)
+    results = search_similar_edges(query_vec, equipment_id=equipment_id, top_k=top_k, min_score=0.62)
 
-    # If no results in vector database, return quick fallback
-    if not results:
-        # Check database for exact node symptom matching
-        fallback_msg = "🤖 **Smriti Copilot (Offline Fallback):** No similar historical fixes found for this query."
-        return {
-            "answer": fallback_msg,
-            "retrieved_edges": [],
-            "confidence": 0.0
-        }
-
-    # 4. Fetch full edge + node data for RAG context
-    edge_ids = [eid for eid, _ in results]
-    edges = db.query(KnowledgeEdge).filter(KnowledgeEdge.id.in_(edge_ids)).all()
-    fix_node_ids = list(set(e.target_id for e in edges))
-    fix_nodes = db.query(KnowledgeNode).filter(KnowledgeNode.id.in_(fix_node_ids)).all()
-    node_map = {n.id: n for n in fix_nodes}
-
-    # Sort edges by match score
-    score_map = {eid: score for eid, score in results}
-    edges.sort(key=lambda e: score_map.get(e.id, 0), reverse=True)
-
-    # 5. Build context payload
-    context = build_fix_context(edges, node_map)
+    # 4. Fetch full edge + node data for RAG context if results found
+    if results:
+        edge_ids = [eid for eid, _ in results]
+        edges = db.query(KnowledgeEdge).filter(KnowledgeEdge.id.in_(edge_ids)).all()
+        fix_node_ids = list(set(e.target_id for e in edges))
+        fix_nodes = db.query(KnowledgeNode).filter(KnowledgeNode.id.in_(fix_node_ids)).all()
+        node_map = {n.id: n for n in fix_nodes}
+        score_map = {eid: score for eid, score in results}
+        edges.sort(key=lambda e: score_map.get(e.id, 0), reverse=True)
+        context = build_fix_context(edges, node_map)
+    else:
+        edges = []
+        node_map = {}
+        context = "No specific equipment fix records found matching this query."
 
     # 6. Cloud-First: Call OpenRouter or Gemini API if key is available
     if settings.openrouter_api_key:
