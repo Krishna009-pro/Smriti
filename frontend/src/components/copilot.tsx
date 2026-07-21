@@ -187,7 +187,11 @@ export function Copilot({ equipmentId }: CopilotProps) {
                         : 'rounded-tl-sm border border-border bg-secondary/40',
                     )}
                   >
-                    {m.content || (
+                    {m.role === 'assistant' ? (
+                      <AssistantMessage content={m.content} />
+                    ) : m.content ? (
+                      m.content
+                    ) : (
                       <span className="inline-flex gap-1">
                         <Dot delay={0} />
                         <Dot delay={0.15} />
@@ -281,5 +285,53 @@ function Dot({ delay }: { delay: number }) {
       animate={{ opacity: [0.3, 1, 0.3] }}
       transition={{ duration: 1, repeat: Infinity, delay }}
     />
+  )
+}
+
+function AssistantMessage({ content }: { content: string }) {
+  // Try to parse JSON content produced by the backend RAG/chatbot.
+  // If parsing fails, fall back to raw text display.
+  let parsed: any = null
+  try {
+    parsed = JSON.parse(content)
+  } catch (_e) {
+    // not JSON — leave parsed as null
+  }
+
+  if (!parsed) {
+    return <div className="whitespace-pre-wrap">{content}</div>
+  }
+
+  const answer = parsed.formatted_answer ?? parsed.answer ?? parsed.text ?? ''
+  const edges = parsed.retrieved_edges ?? parsed.retrieved_edges ?? []
+
+  return (
+    <div>
+      <div className="mb-2 text-[13px] whitespace-pre-wrap">{answer}</div>
+
+      {Array.isArray(edges) && edges.length > 0 && (
+        <div className="mt-2 rounded-md border border-border bg-background/40 p-2 text-[12px]">
+          <div className="mb-1 text-[11px] font-medium text-muted-foreground">References</div>
+          <ul className="space-y-1">
+            {edges.map((e: any, i: number) => (
+              <li key={i} className="flex items-start gap-2">
+                <span className="font-mono text-[11px] text-teal">{e.edge_id ?? e.edgeId ?? e.id ?? 'edge'}</span>
+                <div className="flex-1">
+                  <div className="text-[12px]">{e.fix_name ?? e.fixName ?? e.title ?? JSON.stringify(e)}</div>
+                  {typeof e.confidence !== 'undefined' && (
+                    <div className="text-[11px] text-muted-foreground">Confidence: {(e.confidence * 100).toFixed(1)}%</div>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <details className="mt-2 text-[11px] text-muted-foreground">
+        <summary className="cursor-pointer">Show raw response</summary>
+        <pre className="mt-2 max-h-40 overflow-auto text-[11px]">{JSON.stringify(parsed, null, 2)}</pre>
+      </details>
+    </div>
   )
 }
