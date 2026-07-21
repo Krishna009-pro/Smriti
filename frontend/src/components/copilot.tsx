@@ -1,10 +1,11 @@
+import React, { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Bot, ImageIcon, Send, Sparkles, User, X } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type { ChatMessage } from '@/lib/types'
+
+const Markdown = React.lazy(() => import('react-markdown'))
 
 interface CopilotProps {
   equipmentId: string | null
@@ -315,7 +316,9 @@ function AssistantMessage({ content }: { content: string }) {
   return (
     <div>
       <div className="mb-2 text-[13px]">
-        <ReactMarkdown>{rawAnswer}</ReactMarkdown>
+        <React.Suspense fallback={<div className="text-[13px] whitespace-pre-wrap">{rawAnswer}</div>}>
+          <Markdown>{rawAnswer}</Markdown>
+        </React.Suspense>
       </div>
 
       {Array.isArray(edges) && edges.length > 0 && (
