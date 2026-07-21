@@ -118,7 +118,8 @@ export function Copilot({ equipmentId }: CopilotProps) {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 30, scale: 0.96 }}
             transition={{ type: 'spring', stiffness: 300, damping: 28 }}
-            className="glass fixed bottom-6 right-6 z-50 flex h-[560px] w-[calc(100vw-3rem)] max-w-[380px] flex-col overflow-hidden rounded-2xl border border-border shadow-2xl"
+            className="glass fixed bottom-6 right-6 z-50 flex h-[560px] w-[calc(100vw-3rem)] max-w-[380px] flex-col overflow-auto rounded-2xl border border-border shadow-2xl"
+            style={{ resize: 'both', minWidth: 280, minHeight: 240 }}
           >
             {/* Header */}
             <div className="flex items-center justify-between border-b border-border px-4 py-3">
@@ -299,11 +300,12 @@ function AssistantMessage({ content }: { content: string }) {
   }
 
   if (!parsed) {
-    return <div className="whitespace-pre-wrap">{content}</div>
+    return <div className="whitespace-pre-wrap">{sanitizeAnswer(content)}</div>
   }
 
-  const answer = parsed.formatted_answer ?? parsed.answer ?? parsed.text ?? ''
-  const edges = parsed.retrieved_edges ?? parsed.retrieved_edges ?? []
+  const rawAnswer = parsed.formatted_answer ?? parsed.answer ?? parsed.text ?? ''
+  const answer = sanitizeAnswer(rawAnswer)
+  const edges = parsed.retrieved_edges ?? parsed.retrievedEdges ?? parsed.edges ?? []
 
   return (
     <div>
@@ -319,7 +321,7 @@ function AssistantMessage({ content }: { content: string }) {
                 <div className="flex-1">
                   <div className="text-[12px]">{e.fix_name ?? e.fixName ?? e.title ?? JSON.stringify(e)}</div>
                   {typeof e.confidence !== 'undefined' && (
-                    <div className="text-[11px] text-muted-foreground">Confidence: {(e.confidence * 100).toFixed(1)}%</div>
+                    <div className="text-[11px] text-muted-foreground">Confidence: {(Number(e.confidence) * 100).toFixed(1)}%</div>
                   )}
                 </div>
               </li>
@@ -334,4 +336,18 @@ function AssistantMessage({ content }: { content: string }) {
       </details>
     </div>
   )
+}
+
+function sanitizeAnswer(text: string) {
+  if (!text) return ''
+  // Remove code fences and inline code
+  let s = text.replace(/```[\s\S]*?```/g, '')
+  s = s.replace(/`/g, '')
+  // Remove bold/italic markers
+  s = s.replace(/\*\*([\s\S]*?)\*\*/g, '$1')
+  s = s.replace(/\*([\s\S]*?)\*/g, '$1')
+  // Collapse excessive blank lines
+  s = s.replace(/\n{3,}/g, '\n\n')
+  // Trim whitespace
+  return s.trim()
 }
