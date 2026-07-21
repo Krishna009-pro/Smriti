@@ -12,10 +12,11 @@ interface ChatAskResponse {
   mode?: string
 }
 
-const DEFAULT_API_URL = 'https://smriti-tbxd.onrender.com'
-const BASE = (import.meta.env.VITE_API_URL as string | undefined) || DEFAULT_API_URL
+const RENDER_BACKEND_URL = 'https://smriti-tbxd.onrender.com'
+const rawEnvUrl = (import.meta.env.VITE_API_URL as string | undefined)?.trim() ?? ''
+const BASE = rawEnvUrl && !rawEnvUrl.includes('vercel.app') ? rawEnvUrl : RENDER_BACKEND_URL
+
 function url(path: string) {
-  if (!BASE) return path
   return BASE.replace(/\/$/, '') + (path.startsWith('/') ? path : '/' + path)
 }
 

@@ -3,8 +3,9 @@ import type { Alert, SseStatus } from '@/lib/types'
 
 const BACKOFF = [1000, 2000, 4000, 8000, 16000, 30000]
 
-const DEFAULT_API_URL = 'https://smriti-tbxd.onrender.com'
-const API_BASE = ((import.meta.env.VITE_API_URL as string | undefined) || DEFAULT_API_URL).replace(/\/$/, '')
+const RENDER_BACKEND_URL = 'https://smriti-tbxd.onrender.com'
+const rawEnvUrl = (import.meta.env.VITE_API_URL as string | undefined)?.trim() ?? ''
+const API_BASE = (rawEnvUrl && !rawEnvUrl.includes('vercel.app') ? rawEnvUrl : RENDER_BACKEND_URL).replace(/\/$/, '')
 
 export function useSSE(onAlert: (alert: Alert) => void) {
   const [status, setStatus] = useState<SseStatus>('reconnecting')
