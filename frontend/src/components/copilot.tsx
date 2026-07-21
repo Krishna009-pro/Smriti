@@ -347,10 +347,12 @@ function AssistantMessage({ content }: { content: string }) {
   }
 
   if (!parsed) {
-    // Render non-JSON assistant output as markdown
+    // Render non-JSON assistant output as markdown (lazy-loaded)
     return (
       <div className="prose max-w-none text-[13px]" style={{ whiteSpace: 'pre-wrap' }}>
-        <ReactMarkdown>{content}</ReactMarkdown>
+        <React.Suspense fallback={<div className="text-[13px] whitespace-pre-wrap">{content}</div>}>
+          <Markdown>{content}</Markdown>
+        </React.Suspense>
       </div>
     )
   }
