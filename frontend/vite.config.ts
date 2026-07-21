@@ -4,6 +4,10 @@ import tailwindcss from "@tailwindcss/vite";
 import tsconfigPaths from "vite-tsconfig-paths";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 
+if (process.env.VERCEL || !process.env.NITRO_PRESET) {
+  process.env.NITRO_PRESET = process.env.NITRO_PRESET || "vercel";
+}
+
 export default defineConfig({
   plugins: [
     tanstackStart({

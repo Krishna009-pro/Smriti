@@ -13,11 +13,13 @@ This document explains the recommended, minimal steps to deploy the frontend to 
   2. In the Vercel project settings set the "Root Directory" to `frontend` so Vercel runs the frontend build from the nested folder.
   3. Environment variables to set in Vercel (Values depend on where your API will be hosted):
      - VITE_API_URL (or NEXT_PUBLIC_API_BASE_URL) — e.g. https://smriti-api.onrender.com
-  4. Build & Output settings (if Vercel doesn't detect automatically):
+  4. Build & Output settings:
+     - Framework Preset: Other (or Vite)
+     - Root Directory: frontend
      - Install Command: npm ci
      - Build Command: npm run build
-     - Output Directory: dist
-  5. Deploy. The static site will be served from Vercel's CDN.
+     - Output Directory: Leave blank (Nitro generates .vercel/output automatically via Build Output API v3)
+  5. Deploy. Vercel will deploy static assets and SSR functions.
 
 - Notes
   - The repo includes vercel.json which instructs Vercel to build the frontend nested under `frontend/` and use `dist` as the publish directory.
