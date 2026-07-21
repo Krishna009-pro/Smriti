@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { Bot, ImageIcon, Send, Sparkles, User, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type { ChatMessage } from '@/lib/types'
@@ -300,16 +301,22 @@ function AssistantMessage({ content }: { content: string }) {
   }
 
   if (!parsed) {
-    return <div className="whitespace-pre-wrap">{sanitizeAnswer(content)}</div>
+    // Render non-JSON assistant output as markdown
+    return (
+      <div className="prose max-w-none text-[13px]" style={{ whiteSpace: 'pre-wrap' }}>
+        <ReactMarkdown>{content}</ReactMarkdown>
+      </div>
+    )
   }
 
   const rawAnswer = parsed.formatted_answer ?? parsed.answer ?? parsed.text ?? ''
-  const answer = sanitizeAnswer(rawAnswer)
   const edges = parsed.retrieved_edges ?? parsed.retrievedEdges ?? parsed.edges ?? []
 
   return (
     <div>
-      <div className="mb-2 text-[13px] whitespace-pre-wrap">{answer}</div>
+      <div className="mb-2 text-[13px]">
+        <ReactMarkdown>{rawAnswer}</ReactMarkdown>
+      </div>
 
       {Array.isArray(edges) && edges.length > 0 && (
         <div className="mt-2 rounded-md border border-border bg-background/40 p-2 text-[12px]">
@@ -336,18 +343,4 @@ function AssistantMessage({ content }: { content: string }) {
       </details>
     </div>
   )
-}
-
-function sanitizeAnswer(text: string) {
-  if (!text) return ''
-  // Remove code fences and inline code
-  let s = text.replace(/```[\s\S]*?```/g, '')
-  s = s.replace(/`/g, '')
-  // Remove bold/italic markers
-  s = s.replace(/\*\*([\s\S]*?)\*\*/g, '$1')
-  s = s.replace(/\*([\s\S]*?)\*/g, '$1')
-  // Collapse excessive blank lines
-  s = s.replace(/\n{3,}/g, '\n\n')
-  // Trim whitespace
-  return s.trim()
 }
