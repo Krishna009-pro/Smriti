@@ -27,7 +27,7 @@ export function Copilot({ equipmentId }: CopilotProps) {
   const fileRef = useRef<HTMLInputElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement | null>(null)
-  const [size, setSize] = useState<{ width?: number; height?: number }>({})
+  const [size, setSize] = useState<{ width?: number; height?: number }>({ width: 600, height: 400 })
   const MIN_W = 280
   const MIN_H = 240
 
