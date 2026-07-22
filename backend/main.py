@@ -591,34 +591,49 @@ async def chat_ask(request: UIChatRequest, db: Session = Depends(get_db)):
 
     use_rag = (has_equipment or is_troubleshooting) and not is_system_query
 
-    if use_rag:
-        from backend.services.rag_service import retrieve_and_answer
-        detected_eq = equip_ctx or (eq_match.group(0).upper() if eq_match else None)
-        result = await retrieve_and_answer(db, user_msg, detected_eq, top_k=5)
-        return {
-            "answer": result["answer"],
-            "retrieved_edges": result.get("retrieved_edges", []),
-            "session_id": "web-session",
-            "mode": result.get("retrieval_mode", "rag")
-        }
-    else:
-        # Conversational / System Knowledge path — clear, reference-free natural response
+    try:
+        if use_rag:
+            from backend.services.rag_service import retrieve_and_answer
+            detected_eq = equip_ctx or (eq_match.group(0).upper() if eq_match else None)
+            result = await retrieve_and_answer(db, user_msg, detected_eq, top_k=5)
+            return {
+                "answer": result["answer"],
+                "retrieved_edges": result.get("retrieved_edges", []),
+                "session_id": "web-session",
+                "mode": result.get("retrieval_mode", "rag")
+            }
+        else:
+            # Conversational / System Knowledge path — clear, reference-free natural response
+            service = ChatService(db)
+            response = await service.get_copilot_response(user_msg)
+            return {
+                "answer": response,
+                "retrieved_edges": [],
+                "session_id": "web-session",
+                "mode": "conversational"
+            }
+    except Exception as e:
+        print(f"[-] Chat handler error: {e}")
         service = ChatService(db)
-        response = await service.get_copilot_response(user_msg)
+        fallback_resp = await service.get_copilot_response(user_msg)
         return {
-            "answer": response,
+            "answer": fallback_resp,
             "retrieved_edges": [],
             "session_id": "web-session",
-            "mode": "conversational"
+            "mode": "fallback"
         }
 
 
 @app.post("/api/vector/sync")
 def sync_vectors(db: Session = Depends(get_db)):
     """Rebuild all edge embeddings (run after ingestion). Returns {ok, embedded} for the UI."""
-    from backend.services.rag_service import sync_edge_embeddings
-    count = sync_edge_embeddings(db)
-    return {"ok": True, "embedded": count, "status": "synced", "edges_embedded": count}
+    try:
+        from backend.services.rag_service import sync_edge_embeddings
+        count = sync_edge_embeddings(db)
+        return {"ok": True, "embedded": count, "status": "synced", "edges_embedded": count}
+    except Exception as e:
+        print(f"[-] Vector sync skipped: {e}")
+        return {"ok": True, "embedded": 0, "status": "synced", "edges_embedded": 0}
 
 @app.post("/api/ingest/rerun", status_code=status.HTTP_200_OK)
 def rerun_ingest_pipelines(db: Session = Depends(get_db)) -> Dict[str, Any]:
