@@ -101,13 +101,17 @@ async def startup_event():
             sync_edge_embeddings(db)
         finally:
             db.close()
-            
-        # Launch Telegram conversational listener task
-        import asyncio
+    except Exception as e:
+        print(f"[-] Vector startup indexing warning: {e}")
+
+    # Launch Telegram conversational listener task independently
+    try:
+        from backend.db.session import SessionLocal
         from backend.services.telegram_listener import start_telegram_listener
         asyncio.create_task(start_telegram_listener(SessionLocal))
+        print("[+] Telegram listener task dispatched successfully.")
     except Exception as e:
-        print(f"[-] Vector startup indexing failed: {e}")
+        print(f"[-] Telegram listener dispatch error: {e}")
 
 
 @app.on_event("shutdown")
