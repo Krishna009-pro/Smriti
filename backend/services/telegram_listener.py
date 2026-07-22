@@ -48,7 +48,7 @@ async def start_telegram_listener(session_factory: sessionmaker):
         try:
             url = f"https://api.telegram.org/bot{bot_token}/getUpdates"
             params = {"offset": last_update_id + 1, "timeout": 5}
-            resp = await client.get(url, params=params, timeout=10.0)
+            resp = await client.get(url, params=params, timeout=25.0)
 
             if resp.status_code == 200:
                 result = resp.json().get("result", [])
@@ -223,6 +223,9 @@ async def start_telegram_listener(session_factory: sessionmaker):
 
         except asyncio.CancelledError:
             break
+        except httpx.TimeoutException:
+            # Normal long-polling timeout when no new messages arrive; loop cleanly
+            continue
         except Exception as e:
             import traceback
             print(f"[-] Telegram listener polling loop exception: {e}")
