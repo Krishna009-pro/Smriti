@@ -46,8 +46,8 @@ export function Header({
     <header className="sticky top-0 z-40 border-b border-border glass">
       <div className="mx-auto flex h-16 max-w-[1600px] items-center justify-between gap-4 px-4 sm:px-6">
         <div className="flex items-center gap-3">
-          <div className="relative flex size-9 items-center justify-center rounded-xl border border-teal/30 bg-teal/10">
-            <Brain className="size-5 text-teal" />
+          <div className="relative flex size-9 items-center justify-center rounded-xl border border-teal/30 bg-teal/10 overflow-hidden shadow-sm">
+            <img src="/favicon.svg" alt="SMRITI OS Logo" className="size-7 object-contain" />
           </div>
           <div className="leading-tight">
             <h1 className="text-sm font-semibold tracking-tight sm:text-base">
