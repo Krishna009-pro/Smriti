@@ -8,10 +8,10 @@ class AlertSender:
 
     async def send_telegram_alert(self, alert_data: Dict[str, Any]) -> bool:
         """
-        UC-3 & Spec 15: Push a proactive alert to Telegram Bot API.
+        UC-3 & Spec 15: Push a proactive alert to Telegram Bot API with inline action buttons.
         If credentials are not set, fall back to console print.
         """
-        eq_id = alert_data.get("equipment_id")
+        eq_id = alert_data.get("equipment_id", "P-102")
         eq_name = alert_data.get("equipment_name", eq_id)
         symptom = alert_data.get("symptom", "Anomaly detected")
         fix_name = alert_data.get("suggested_fix", "Consult manual")
@@ -31,11 +31,22 @@ class AlertSender:
             f"• *Remedy Confidence:* {confidence:.2%}"
         )
         
+        reply_markup = {
+            "inline_keyboard": [
+                [
+                    {"text": "⚡ Acknowledge Alert", "callback_data": f"ack:{eq_id}"},
+                    {"text": "🛠️ Confirm Fix", "callback_data": f"vote:confirm:{eq_id}"}
+                ],
+                [
+                    {"text": "❌ Reject Fix", "callback_data": f"vote:reject:{eq_id}"}
+                ]
+            ]
+        }
+
         # Log locally to console
         print(f"\n[ALERT SIGNAL] {eq_name} - {symptom}. Remedy: {fix_name} (Confidence: {confidence:.2f})\n")
 
         if not self.bot_token or not self.chat_id:
-            # Silent fallback if not configured, return True because alert was output to console
             return True
         
         try:
@@ -46,7 +57,8 @@ class AlertSender:
                     json={
                         "chat_id": self.chat_id,
                         "text": text,
-                        "parse_mode": "Markdown"
+                        "parse_mode": "Markdown",
+                        "reply_markup": reply_markup
                     },
                     timeout=5.0
                 )

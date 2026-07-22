@@ -148,3 +148,63 @@ class ChatService:
                 f"🤖 **Smriti Copilot (Offline Fallback):**\n"
                 f"Welcome! Ask me about specific equipment (e.g. 'P-102' or 'V-101') to retrieve its connected P&ID topology and troubleshooting logs."
             )
+
+async def unified_chat_router(db: Session, user_msg: str, equip_ctx: str | None = None) -> dict:
+    """
+    Unified smart chat router used by both Web API (/api/chat/ask) and Telegram Copilot:
+    - Equipment IDs or troubleshooting keywords → RAG pipeline (historical fixes, vector search)
+    - General / conversational queries → ChatService (natural LLM conversation)
+    """
+    import re
+    user_text = (user_msg or "").strip()
+    if not user_text and equip_ctx:
+        user_text = f"What is the troubleshooting history and fix for {equip_ctx}?"
+
+    # Detect explicit equipment ID in message or request
+    eq_match = re.search(r'\b([PVTF]-\d+\w*|VLV-\d+\w*|P_\d+\w*)\b', user_text, re.IGNORECASE)
+    has_equipment = bool(eq_match) or bool(equip_ctx)
+
+    # Explicit check for platform/system queries that shouldn't search equipment vector database
+    is_system_query = bool(re.search(
+        r'\b(telegram|alert|bot|vote|voting|website|graph|how to|who are you|about you|hello|hi|hey|what is happening|help)\b',
+        user_text, re.IGNORECASE
+    )) and not has_equipment
+
+    # Keywords that imply a physical equipment troubleshooting intent
+    is_troubleshooting = bool(re.search(
+        r'\b(fix|repair|fault|fail|leak|pressure|vibration|trip|stuck|broken|'
+        r'incident|symptom|diagnos|error|issue|problem|history|historical|'
+        r'maintenance|seal|pump|valve|cavitation|anomaly)\b',
+        user_text, re.IGNORECASE
+    ))
+
+    use_rag = (has_equipment or is_troubleshooting) and not is_system_query
+
+    try:
+        if use_rag:
+            from backend.services.rag_service import retrieve_and_answer
+            detected_eq = equip_ctx or (eq_match.group(0).upper() if eq_match else None)
+            result = await retrieve_and_answer(db, user_text, detected_eq, top_k=5)
+            return {
+                "answer": result.get("answer", "No answer generated."),
+                "retrieved_edges": result.get("retrieved_edges", []),
+                "mode": result.get("retrieval_mode", "rag")
+            }
+        else:
+            service = ChatService(db)
+            response = await service.get_copilot_response(user_text)
+            return {
+                "answer": response,
+                "retrieved_edges": [],
+                "mode": "conversational"
+            }
+    except Exception as e:
+        print(f"[-] Unified chat router fallback exception: {e}")
+        service = ChatService(db)
+        fallback_resp = await service.get_copilot_response(user_text)
+        return {
+            "answer": fallback_resp,
+            "retrieved_edges": [],
+            "mode": "fallback"
+        }
+

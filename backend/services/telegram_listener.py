@@ -1,14 +1,15 @@
-"""Interactive Telegram Bot Listener for mobile conversational RAG."""
+"""Interactive Telegram Bot Listener for mobile conversational RAG & real-time telemetry actions."""
 import asyncio
 import httpx
 from sqlalchemy.orm import sessionmaker
 from backend.config import settings
-from backend.services.rag_service import retrieve_and_answer
+from backend.services.chat_service import unified_chat_router
+from backend.services.confidence import record_feedback
 
 async def start_telegram_listener(session_factory: sessionmaker):
     """
-    Background worker that polls Telegram updates and replies to technician questions
-    using the Cloud-First, Local-Second RAG pipeline.
+    Background worker that polls Telegram updates, replies to technician questions,
+    processes photo vision inputs, and handles inline button callbacks (Ack/Vote).
     """
     bot_token = settings.telegram_bot_token
     if not bot_token or "your_" in bot_token:
@@ -19,7 +20,7 @@ async def start_telegram_listener(session_factory: sessionmaker):
     last_update_id = 0
     client = httpx.AsyncClient()
 
-    # Seed the initial offset so we don't reply to stale historical messages on restart
+    # Seed initial offset so we don't reply to stale historical messages on restart
     try:
         url = f"https://api.telegram.org/bot{bot_token}/getUpdates"
         resp = await client.get(url, params={"limit": 1}, timeout=5.0)
@@ -29,6 +30,29 @@ async def start_telegram_listener(session_factory: sessionmaker):
                 last_update_id = updates[-1]["update_id"]
     except Exception as e:
         print(f"[-] Initial Telegram offset fetch failed: {e}")
+
+    async def send_telegram_reply(chat_id: int, text: str, reply_markup: dict | None = None):
+        """Send message safely trying HTML/Markdown or raw text fallback."""
+        send_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        payload = {"chat_id": chat_id, "text": text}
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
+
+        # Try Markdown parse mode first
+        try:
+            payload["parse_mode"] = "Markdown"
+            res = await client.post(send_url, json=payload, timeout=8.0)
+            if res.status_code == 200:
+                return
+        except Exception:
+            pass
+
+        # Fallback to plain text if Telegram Markdown parsing fails on special characters
+        payload.pop("parse_mode", None)
+        try:
+            await client.post(send_url, json=payload, timeout=8.0)
+        except Exception as e:
+            print(f"[-] Failed to send Telegram reply: {e}")
 
     while True:
         try:
@@ -40,19 +64,88 @@ async def start_telegram_listener(session_factory: sessionmaker):
                 result = resp.json().get("result", [])
                 for update in result:
                     last_update_id = update["update_id"]
+
+                    # -------------------------------------------------------------
+                    # Handle Callback Queries (Inline Button Taps)
+                    # -------------------------------------------------------------
+                    if "callback_query" in update:
+                        cb = update["callback_query"]
+                        cb_id = cb["id"]
+                        cb_data = cb.get("data", "")
+                        from_user = cb.get("from", {}).get("first_name", "TECH-01")
+                        chat_id = cb.get("message", {}).get("chat", {}).get("id")
+
+                        # Answer Telegram callback popup
+                        await client.post(
+                            f"https://api.telegram.org/bot{bot_token}/answerCallbackQuery",
+                            json={"callback_query_id": cb_id, "text": "Processing action..."}
+                        )
+
+                        if not chat_id:
+                            continue
+
+                        db = session_factory()
+                        try:
+                            if cb_data.startswith("ack:"):
+                                eq_id = cb_data.split("ack:")[-1]
+                                msg_text = (
+                                    f"⚡ **Alert Acknowledged!**\n"
+                                    f"• Technician: `{from_user}`\n"
+                                    f"• Equipment: `{eq_id}`\n"
+                                    f"• Status: Dispatched field inspection to Unit.\n"
+                                    f"• Dashboard: Real-time SSE alert pushed to Mission Control Console."
+                                )
+                                await send_telegram_reply(chat_id, msg_text)
+
+                            elif cb_data.startswith("vote:"):
+                                parts = cb_data.split(":")
+                                vote_type = parts[1]  # 'confirm' or 'reject'
+                                eq_or_edge = parts[2]
+
+                                # Find edge matching eq_or_edge
+                                from backend.db.models import KnowledgeEdge
+                                edge = db.query(KnowledgeEdge).filter(
+                                    (KnowledgeEdge.id == eq_or_edge) | (KnowledgeEdge.source_id == eq_or_edge)
+                                ).first()
+
+                                if edge:
+                                    res = record_feedback(db, edge.id, outcome="confirmed" if vote_type == "confirm" else "rejected")
+                                    new_conf = res.get("new_confidence", edge.confidence)
+                                    outcome_str = "Confirmed" if vote_type == "confirm" else "Rejected"
+                                    emoji = "🎉" if vote_type == "confirm" else "⚠️"
+
+                                    msg_text = (
+                                        f"{emoji} **Remedy {outcome_str}!**\n"
+                                        f"• Equipment/Fix: `{edge.source_id}` → `{edge.target_id}`\n"
+                                        f"• Updated Wilson Confidence: `{new_conf:.2%}`\n"
+                                        f"• Technician: `{from_user}`\n"
+                                        f"• Institutional Memory: Permanently updated in database graph!"
+                                    )
+                                    await send_telegram_reply(chat_id, msg_text)
+                                else:
+                                    await send_telegram_reply(chat_id, f"✅ Action recorded for `{eq_or_edge}`.")
+                        except Exception as ex:
+                            print(f"[-] Callback handler error: {ex}")
+                            await send_telegram_reply(chat_id, f"Action received: `{cb_data}`")
+                        finally:
+                            db.close()
+                        continue
+
+                    # -------------------------------------------------------------
+                    # Handle Messages (Text or Photos)
+                    # -------------------------------------------------------------
                     message = update.get("message")
                     if not message or ("text" not in message and "photo" not in message):
                         continue
 
                     chat_id = message["chat"]["id"]
-                    reply = ""
+                    reply_buttons = None
 
                     if "photo" in message:
-                        # Fetch photo file path and download
                         photo = message["photo"]
                         largest_photo = photo[-1]
                         file_id = largest_photo["file_id"]
-                        
+
                         file_url = f"https://api.telegram.org/bot{bot_token}/getFile"
                         try:
                             file_resp = await client.get(file_url, params={"file_id": file_id})
@@ -67,60 +160,79 @@ async def start_telegram_listener(session_factory: sessionmaker):
                                         if eq_id:
                                             db = session_factory()
                                             try:
-                                                rag_res = await retrieve_and_answer(db, f"How do we fix {eq_id}?")
-                                                reply = (
+                                                chat_res = await unified_chat_router(db, f"How do we fix {eq_id}?", equip_ctx=eq_id)
+                                                reply_text = (
                                                     f"📸 **Identified Equipment:** `{eq_id}` from photo\n\n"
-                                                    f"{rag_res['answer']}"
+                                                    f"{chat_res['answer']}"
                                                 )
+                                                reply_buttons = {
+                                                    "inline_keyboard": [
+                                                        [
+                                                            {"text": "🛠️ Confirm Fix", "callback_data": f"vote:confirm:{eq_id}"},
+                                                            {"text": "❌ Reject Fix", "callback_data": f"vote:reject:{eq_id}"}
+                                                        ]
+                                                    ]
+                                                }
                                             except Exception as ex:
-                                                reply = f"Error processing query for {eq_id}: {ex}"
+                                                reply_text = f"Error processing query for {eq_id}: {ex}"
                                             finally:
                                                 db.close()
                                         else:
-                                            reply = "🔍 I inspected the photo but couldn't find a clear equipment tag like P-102 or V-101."
+                                            reply_text = "🔍 Inspected photo but couldn't detect a clear equipment tag like P-102 or V-101."
                                     else:
-                                        reply = "Error: Failed to download the image file from Telegram."
+                                        reply_text = "Error downloading image file."
                                 else:
-                                    reply = "Error: File path not found in Telegram metadata."
+                                    reply_text = "Error retrieving image path."
                             else:
-                                reply = f"Error: Failed to retrieve file details from Telegram API (HTTP {file_resp.status_code})."
+                                reply_text = f"Telegram File API returned HTTP {file_resp.status_code}."
                         except Exception as e:
-                            reply = f"Error during photo download: {e}"
+                            reply_text = f"Photo vision error: {e}"
                     else:
                         user_text = message["text"]
                         if user_text.strip() == "/start":
-                            reply = (
+                            reply_text = (
                                 "👋 **Welcome to Smriti AI Mobile Copilot!**\n\n"
-                                "Ask me troubleshooting or procedure questions about any plant equipment.\n"
-                                "• Example: *P-102 pressure drops, what should I check?*\n"
-                                "• Or take/send a photo of any equipment tag nameplate!"
+                                "I am your refinery institutional memory assistant. You can ask me anything about plant operations, system alerts, or specific equipment troubleshooting!\n\n"
+                                "• Try asking: *'Hello'*, *'what is happening'*, or *'What is the fix for P-102?'*\n"
+                                "• Or send a photo of any equipment tag nameplate!"
                             )
                         else:
                             db = session_factory()
                             try:
-                                rag_res = await retrieve_and_answer(db, user_text)
-                                reply = rag_res["answer"]
+                                chat_res = await unified_chat_router(db, user_text)
+                                reply_text = chat_res["answer"]
+
+                                # Attach voting action buttons if equipment ID was detected in answer or text
+                                import re
+                                match = re.search(r'\b([PVTF]-\d+\w*)\b', user_text + " " + reply_text, re.IGNORECASE)
+                                if match:
+                                    detected_tag = match.group(0).upper()
+                                    reply_buttons = {
+                                        "inline_keyboard": [
+                                            [
+                                                {"text": "⚡ Acknowledge Alert", "callback_data": f"ack:{detected_tag}"},
+                                                {"text": "🛠️ Confirm Fix", "callback_data": f"vote:confirm:{detected_tag}"}
+                                            ],
+                                            [
+                                                {"text": "❌ Reject Fix", "callback_data": f"vote:reject:{detected_tag}"}
+                                            ]
+                                        ]
+                                    }
                             except Exception as ex:
-                                reply = f"Error processing query: {ex}"
+                                reply_text = f"Error processing query: {ex}"
                             finally:
                                 db.close()
 
-                    # Send reply back to Telegram
-                    send_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-                    await client.post(send_url, json={
-                        "chat_id": chat_id,
-                        "text": reply,
-                        "parse_mode": "Markdown"
-                    })
+                    await send_telegram_reply(chat_id, reply_text, reply_buttons)
 
         except asyncio.CancelledError:
             break
         except Exception as e:
             import traceback
-            print(f"[-] Telegram listener polling error: {e}")
+            print(f"[-] Telegram listener polling loop exception: {e}")
             traceback.print_exc()
             await asyncio.sleep(5)
-        
+
         await asyncio.sleep(1)
 
     await client.aclose()

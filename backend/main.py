@@ -565,63 +565,17 @@ async def chat_ask(request: UIChatRequest, db: Session = Depends(get_db)):
     - Equipment IDs or troubleshooting keywords → RAG pipeline (historical fixes, vector search)
     - General / conversational queries → ChatService (natural LLM conversation)
     """
-    import re
-
-    # Accept both {question, equipmentId} (new UI) and {message, equipment_id} (legacy)
     user_msg  = request.question or request.message or ""
     equip_ctx = request.equipmentId or request.equipment_id
 
-    # Detect explicit equipment ID in message or request
-    eq_match = re.search(r'\b([PVTF]-\d+\w*|VLV-\d+\w*|P_\d+\w*)\b', user_msg, re.IGNORECASE)
-    has_equipment = bool(eq_match) or bool(equip_ctx)
-
-    # Explicit check for platform/system queries that shouldn't search equipment vector database
-    is_system_query = bool(re.search(
-        r'\b(telegram|alert|bot|vote|voting|website|graph|how to|who are you|about you)\b',
-        user_msg, re.IGNORECASE
-    )) and not has_equipment
-
-    # Keywords that imply a physical equipment troubleshooting intent
-    is_troubleshooting = bool(re.search(
-        r'\b(fix|repair|fault|fail|leak|pressure|vibration|trip|stuck|broken|'
-        r'incident|symptom|diagnos|error|issue|problem|history|historical|'
-        r'maintenance|seal|pump|valve|cavitation|anomaly)\b',
-        user_msg, re.IGNORECASE
-    ))
-
-    use_rag = (has_equipment or is_troubleshooting) and not is_system_query
-
-    try:
-        if use_rag:
-            from backend.services.rag_service import retrieve_and_answer
-            detected_eq = equip_ctx or (eq_match.group(0).upper() if eq_match else None)
-            result = await retrieve_and_answer(db, user_msg, detected_eq, top_k=5)
-            return {
-                "answer": result["answer"],
-                "retrieved_edges": result.get("retrieved_edges", []),
-                "session_id": "web-session",
-                "mode": result.get("retrieval_mode", "rag")
-            }
-        else:
-            # Conversational / System Knowledge path — clear, reference-free natural response
-            service = ChatService(db)
-            response = await service.get_copilot_response(user_msg)
-            return {
-                "answer": response,
-                "retrieved_edges": [],
-                "session_id": "web-session",
-                "mode": "conversational"
-            }
-    except Exception as e:
-        print(f"[-] Chat handler error: {e}")
-        service = ChatService(db)
-        fallback_resp = await service.get_copilot_response(user_msg)
-        return {
-            "answer": fallback_resp,
-            "retrieved_edges": [],
-            "session_id": "web-session",
-            "mode": "fallback"
-        }
+    from backend.services.chat_service import unified_chat_router
+    result = await unified_chat_router(db, user_msg, equip_ctx)
+    return {
+        "answer": result.get("answer", ""),
+        "retrieved_edges": result.get("retrieved_edges", []),
+        "session_id": "web-session",
+        "mode": result.get("mode", "rag")
+    }
 
 
 @app.post("/api/vector/sync")
