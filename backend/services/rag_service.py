@@ -176,13 +176,11 @@ def sync_edge_embeddings(db: Session) -> int:
     Call after ingestion or on startup.
     """
     init_vector_store()
-    edges = db.query(KnowledgeEdge).filter(
-        KnowledgeEdge.relation_type == "has_known_fix"
-    ).all()
+    edges = db.query(KnowledgeEdge).all()
 
     count = 0
     for edge in edges:
-        text_parts = []
+        text_parts = [f"Source: {edge.source_id}", f"Target: {edge.target_id}"]
         if edge.symptom_description:
             text_parts.append(f"Symptom: {edge.symptom_description}")
         if edge.source_excerpt:
@@ -191,11 +189,13 @@ def sync_edge_embeddings(db: Session) -> int:
         if fix_node:
             text_parts.append(f"Fix: {fix_node.name}")
 
-        if text_parts:
-            embed_text_combined = " | ".join(text_parts)
+        embed_text_combined = " | ".join(text_parts)
+        try:
             vec = embed_text(embed_text_combined)
             upsert_edge_embedding(edge.id, vec)
             count += 1
+        except Exception as e:
+            print(f"[-] Failed embedding edge {edge.id}: {e}")
 
     return count
 
