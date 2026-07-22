@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
-from pydantic import BaseModel as PydanticBaseModel
+from pydantic import BaseModel, BaseModel as PydanticBaseModel
 from typing import Optional as PydanticOptional
 
 from backend.config import settings
