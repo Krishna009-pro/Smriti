@@ -200,11 +200,11 @@ def sync_edge_embeddings(db: Session) -> int:
     return count
 
 async def extract_equipment_from_image(image_bytes: bytes) -> Optional[str]:
-    """Identify any refinery or industrial equipment tag in an image using Gemini 3.1 Flash Lite."""
+    """Identify any refinery or industrial equipment tag in an image using Gemini 2.5 Flash."""
     if not settings.gemini_api_key:
         return None
     try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key={settings.gemini_api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={settings.gemini_api_key}"
         prompt = (
             "Identify any refinery or industrial equipment tag or ID in this image "
             "(e.g., P-102, V-101, V-102, Valve-101). "
