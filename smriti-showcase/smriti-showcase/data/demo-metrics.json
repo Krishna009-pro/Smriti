@@ -1,0 +1,61 @@
+{
+  "plant": "Northgate Refinery — Feed Unit A",
+  "generated_at": "2026-07-19T22:14:00Z",
+  "retention": {
+    "label": "Knowledge Retention",
+    "value": 94.2,
+    "unit": "%",
+    "delta_30d": 6.1,
+    "tone": "success"
+  },
+  "dependency_score": {
+    "label": "Dependency Traceability",
+    "value": 87,
+    "unit": "/100",
+    "delta_30d": 4.3,
+    "tone": "primary"
+  },
+  "compliance": {
+    "label": "Compliance Flags",
+    "value": 3,
+    "unit": " open",
+    "delta_30d": -2,
+    "tone": "warning"
+  },
+  "mttr_hours": {
+    "label": "Mean Time To Repair",
+    "value": 4.7,
+    "unit": "h",
+    "delta_30d": -1.2,
+    "tone": "primary"
+  },
+  "alerts_last_24h": 12,
+  "alerts_acknowledged": 11,
+  "graph_stats": {
+    "nodes": 4821,
+    "edges": 11903,
+    "equipment": 312,
+    "failure_modes": 184,
+    "fixes": 967,
+    "notes": 3358
+  },
+  "top_equipment": [
+    { "id": "P-102", "name": "Feed Pump", "health": 62, "alerts": 4, "confidence": 0.81 },
+    { "id": "V-204", "name": "Separator Drum", "health": 88, "alerts": 1, "confidence": 0.93 },
+    { "id": "E-310", "name": "Heat Exchanger", "health": 74, "alerts": 2, "confidence": 0.77 },
+    { "id": "C-401", "name": "Compressor", "health": 91, "alerts": 0, "confidence": 0.96 }
+  ],
+  "confidence_distribution": [
+    { "bucket": "0.0–0.3", "count": 412 },
+    { "bucket": "0.3–0.5", "count": 1108 },
+    { "bucket": "0.5–0.7", "count": 1889 },
+    { "bucket": "0.7–0.9", "count": 967 },
+    { "bucket": "0.9–1.0", "count": 445 }
+  ],
+  "recent_events": [
+    { "ts": "22:14:02", "equipment": "P-102", "event": "Vibration > 3.0 mm/s", "severity": "high" },
+    { "ts": "21:58:41", "equipment": "E-310", "event": "Fouling delta-T rising", "severity": "medium" },
+    { "ts": "21:30:19", "equipment": "V-204", "event": "Level high — acknowledged", "severity": "low" },
+    { "ts": "20:11:07", "equipment": "P-102", "event": "Bearing temp 78°C", "severity": "medium" }
+  ]
+}

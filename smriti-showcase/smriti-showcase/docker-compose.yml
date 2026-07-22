@@ -1,0 +1,38 @@
+version: "3.9"
+
+services:
+  web:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - SMRITI_API_URL=http://api:8000
+      - NEXT_PUBLIC_API_BASE_URL=http://api:8000
+      - NEXT_PUBLIC_ANALYTICS_DOMAIN=${ANALYTICS_DOMAIN:-}
+    depends_on:
+      - api
+
+  api:
+    image: smritios/api:0.4.0
+    ports:
+      - "8000:8000"
+    environment:
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-smriti}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - SMRITI_API_KEY=${SMRITI_API_KEY:-dev-key}
+    depends_on:
+      - neo4j
+
+  neo4j:
+    image: neo4j:5.20
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD:-smriti}
+    volumes:
+      - neo4j-data:/data
+
+volumes:
+  neo4j-data:

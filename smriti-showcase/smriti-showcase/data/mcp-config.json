@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "smriti-os": {
+      "command": "npx",
+      "args": ["-y", "smriti-mcp-server"],
+      "env": {
+        "SMRITI_API_URL": "https://api.smriti-os.example.com",
+        "SMRITI_API_KEY": "your-api-key-here"
+      }
+    }
+  }
+}

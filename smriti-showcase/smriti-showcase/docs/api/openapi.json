@@ -1,0 +1,247 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Smriti OS API",
+    "version": "0.4.0",
+    "description": "Industrial Memory Operating System — graph ingestion, confidence learning, telemetry alerts, and MCP tool surface.",
+    "contact": { "name": "Smriti OS", "url": "https://smriti-os.example.com" },
+    "license": { "name": "Apache-2.0" }
+  },
+  "servers": [
+    { "url": "https://api.smriti-os.example.com", "description": "Production" },
+    { "url": "http://localhost:8000", "description": "Local" }
+  ],
+  "tags": [
+    { "name": "ingest", "description": "Multimodal ingestion" },
+    { "name": "graph", "description": "Knowledge graph queries" },
+    { "name": "confidence", "description": "Wilson-score confidence" },
+    { "name": "telemetry", "description": "Real-time telemetry & alerts" },
+    { "name": "mcp", "description": "FastMCP tool surface" }
+  ],
+  "paths": {
+    "/api/ingest/pid": {
+      "post": {
+        "tags": ["ingest"],
+        "summary": "Ingest a P&ID image or PDF",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": { "type": "string", "format": "binary" },
+                  "plant_unit": { "type": "string", "example": "feed-unit-A" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted; ingestion job queued",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/IngestJob" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ingest/note": {
+      "post": {
+        "tags": ["ingest"],
+        "summary": "Ingest a shift note (NLP)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "text": { "type": "string", "example": "P-102 vibrating at 3.2 mm/s, bearing hot. Bled off load, temp dropped." },
+                  "operator": { "type": "string", "example": "shift-A-lead" },
+                  "shift": { "type": "string", "example": "2026-07-19-night" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Extracted triples written to graph",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/IngestResult" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/graph/trace": {
+      "get": {
+        "tags": ["graph"],
+        "summary": "Trace a 3-hop path from an equipment node",
+        "parameters": [
+          { "name": "equipment_id", "in": "query", "required": true, "schema": { "type": "string" }, "example": "P-102" },
+          { "name": "depth", "in": "query", "schema": { "type": "integer", "default": 3 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Graph trace",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/GraphTrace" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/confidence/{node_id}": {
+      "get": {
+        "tags": ["confidence"],
+        "summary": "Get Wilson-score confidence for a node",
+        "parameters": [
+          { "name": "node_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Confidence record",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Confidence" }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["confidence"],
+        "summary": "Record feedback (confirm/contradict) to update confidence",
+        "parameters": [
+          { "name": "node_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "outcome": { "type": "string", "enum": ["success", "failure"] },
+                  "operator": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Updated confidence", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Confidence" } } } }
+        }
+      }
+    },
+    "/api/telemetry/stream": {
+      "get": {
+        "tags": ["telemetry"],
+        "summary": "SSE stream of telemetry anomalies",
+        "responses": {
+          "200": {
+            "description": "Server-Sent Events stream",
+            "content": { "text/event-stream": {} }
+          }
+        }
+      }
+    },
+    "/api/telemetry/simulate": {
+      "post": {
+        "tags": ["telemetry"],
+        "summary": "Inject a synthetic anomaly (demo / testing)",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "equipment_id": { "type": "string", "example": "P-102" },
+                  "severity": { "type": "string", "enum": ["low", "medium", "high"], "default": "medium" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": { "description": "Anomaly injected", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Anomaly" } } } }
+        }
+      }
+    },
+    "/mcp/tools": {
+      "get": {
+        "tags": ["mcp"],
+        "summary": "List FastMCP tools available to LLM agents",
+        "responses": {
+          "200": { "description": "Tool manifest", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MCPTools" } } } }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "IngestJob": {
+        "type": "object",
+        "properties": {
+          "job_id": { "type": "string", "format": "uuid" },
+          "status": { "type": "string", "enum": ["queued", "processing", "done", "failed"] },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "IngestResult": {
+        "type": "object",
+        "properties": {
+          "triples_written": { "type": "integer" },
+          "nodes_upserted": { "type": "integer" },
+          "edges_upserted": { "type": "integer" },
+          "job_id": { "type": "string" }
+        }
+      },
+      "GraphTrace": {
+        "type": "object",
+        "properties": {
+          "root": { "type": "string" },
+          "nodes": { "type": "array", "items": { "type": "object" } },
+          "edges": { "type": "array", "items": { "type": "object" } }
+        }
+      },
+      "Confidence": {
+        "type": "object",
+        "properties": {
+          "node_id": { "type": "string" },
+          "successes": { "type": "integer" },
+          "failures": { "type": "integer" },
+          "wilson_lower": { "type": "number", "format": "float" },
+          "wilson_center": { "type": "number", "format": "float" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Anomaly": {
+        "type": "object",
+        "properties": {
+          "anomaly_id": { "type": "string" },
+          "equipment_id": { "type": "string" },
+          "severity": { "type": "string" },
+          "confidence": { "type": "number" },
+          "detected_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "MCPTools": {
+        "type": "object",
+        "properties": {
+          "tools": { "type": "array", "items": { "type": "object" } }
+        }
+      }
+    }
+  }
+}
