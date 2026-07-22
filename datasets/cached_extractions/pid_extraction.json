@@ -28,6 +28,36 @@
         "valve_type": "Ball Valve",
         "size_inches": 6
       }
+    },
+    {
+      "id": "C-201",
+      "type": "equipment",
+      "name": "Main Gas Compressor C-201",
+      "properties": {
+        "manufacturer": "Dresser-Rand",
+        "power_kw": 1200,
+        "type": "2-Stage Centrifugal"
+      }
+    },
+    {
+      "id": "R-301",
+      "type": "equipment",
+      "name": "Hydrocracker Reactor R-301",
+      "properties": {
+        "manufacturer": "L&T Heavy Engineering",
+        "pressure_rating_bar": 160,
+        "catalyst": "Cobalt-Molybdenum"
+      }
+    },
+    {
+      "id": "T-401",
+      "type": "equipment",
+      "name": "Crude Distillation Column T-401",
+      "properties": {
+        "manufacturer": "Engineers India Limited",
+        "trays": 48,
+        "height_m": 42
+      }
     }
   ],
   "connections": [
@@ -39,6 +69,21 @@
     {
       "source_id": "VLV-102a",
       "target_id": "P-102",
+      "flow_direction": "downstream"
+    },
+    {
+      "source_id": "P-102",
+      "target_id": "C-201",
+      "flow_direction": "downstream"
+    },
+    {
+      "source_id": "C-201",
+      "target_id": "R-301",
+      "flow_direction": "downstream"
+    },
+    {
+      "source_id": "R-301",
+      "target_id": "T-401",
       "flow_direction": "downstream"
     }
   ]

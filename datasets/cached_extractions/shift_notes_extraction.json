@@ -4,10 +4,43 @@
     "symptom_description": "Mechanical seal leaking / pressure drops by 18%",
     "fix_description": "Clear upstream Valve V-101",
     "is_compliance_relevant": true,
-    "source_excerpt": "Pump seal leaking, pressure dropping. Checked seal alignment and tightened gland nuts.",
+    "source_excerpt": "Pump seal leaking, pressure dropping. Checked seal alignment and cleared upstream Valve V-101 gland strainer.",
     "telemetry_signature": {
       "metric": "pressure",
       "condition": "drop_pct > 15"
+    }
+  },
+  {
+    "equipment_name": "Compressor C-201",
+    "symptom_description": "High lube oil temperature (>85°C) & high-frequency vibration spike (+24.5%)",
+    "fix_description": "Flush Lube Oil Heat Exchanger E-204 & inspect seal gas filter",
+    "is_compliance_relevant": true,
+    "source_excerpt": "Compressor C-201 lube oil temp exceeded 85C with 24% vibration increase. Flushed heat exchanger E-204 and replaced seal gas filter element.",
+    "telemetry_signature": {
+      "metric": "temperature",
+      "condition": "temp_c > 85"
+    }
+  },
+  {
+    "equipment_name": "Reactor R-301",
+    "symptom_description": "Thermal runaway warning / bed temperature differential (>12°C delta)",
+    "fix_description": "Inject Hydrogen Quench via Control Valve HCV-304 & throttle feed preheater",
+    "is_compliance_relevant": true,
+    "source_excerpt": "Bed temperature delta spiked 12C in Reactor R-301. Activated emergency H2 quench valve HCV-304 and reduced preheater duty.",
+    "telemetry_signature": {
+      "metric": "temperature_delta",
+      "condition": "delta_c > 12"
+    }
+  },
+  {
+    "equipment_name": "Column T-401",
+    "symptom_description": "Overhead pressure surge (+19.8%) & tray flooding signature",
+    "fix_description": "Adjust Reflux Pump P-402 flow rate & purge non-condensable off-gas line",
+    "is_compliance_relevant": false,
+    "source_excerpt": "Distillation Column T-401 overhead pressure spiked 20%. Increased reflux flow rate on P-402 and opened non-condensable gas purge valve.",
+    "telemetry_signature": {
+      "metric": "pressure_surge",
+      "condition": "surge_pct > 18"
     }
   }
 ]

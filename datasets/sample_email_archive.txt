@@ -1,17 +1,23 @@
 From: arjun.nair@refinery-operations.com
 To: tech-ops@refinery-operations.com
 Date: 2026-07-18 10:14 AM
-Subject: URGENT: Leak and pressure fluctuations observed on Feed Pump P-102
+Subject: URGENT: Incidents on Feed Pump P-102, Compressor C-201, and Reactor R-301
 
 Hi Team,
 
-Following up on the shift notes from this morning. I reviewed the high temperature reading on Pump P-102. 
+Following up on the shift notes from this morning across Area A and Hydrocracking Unit 3.
 
-If anyone else encounters mechanical seal leakage or pressure drops on P-102, Meera confirmed that this is usually caused by backpressure from upstream Valve V-101. 
+1. **Feed Pump P-102**: Mechanical seal leakage and pressure drops on P-102 were confirmed by Meera to be caused by backpressure from upstream Valve V-101. Clearing Valve V-101 resolved the pressure drop.
 
-We ran a flush and cleared Valve V-101, which resolved the pressure drop and stabilized the mechanical seal alignment. Please log this into the asset profile for future shifts.
+2. **Main Gas Compressor C-201**: High lube oil temperature (>85°C) and high-frequency vibration spike (+24.5%) occurred. We flushed Lube Oil Heat Exchanger E-204 and inspected the seal gas filter, restoring normal bearing temperatures.
+
+3. **Hydrocracker Reactor R-301**: Thermal runaway bed temperature differential exceeded 12°C delta. Emergency H2 quench was injected via Control Valve HCV-304 while throttling the feed preheater duty.
+
+4. **Crude Distillation Column T-401**: Overhead pressure surge (+19.8%) and tray flooding occurred. Increased reflux flow rate on Pump P-402 and purged non-condensable off-gas.
+
+Please log all these cases into the asset memory profile for future shifts.
 
 Best regards,
 Arjun Nair
 Senior Maintenance Engineer
-Refinery Area A
+Refinery Area A & Hydrocracking Unit

@@ -1,4 +1,7 @@
 Equipment_ID,Symptom,Resolution_Action,Technician,Date,Compliance_Relevant
-P-101A,Mechanical seal vibration,Checked pump alignment and tightened casing bolts,TECH-01,2026-07-17,true
+P-102,Mechanical seal leaking / pressure drop 18%,Clear upstream Valve V-101 gland strainer,TECH-01,2026-07-18,true
+C-201,Lube oil temp >85°C & vibration spike +24.5%,Flush Lube Oil Heat Exchanger E-204 & inspect seal gas filter,TECH-02,2026-07-19,true
+R-301,Thermal runaway bed temp delta >12°C,Inject H2 quench via HCV-304 & throttle feed preheater,ENG-01,2026-07-20,true
+T-401,Overhead pressure surge +19.8% & tray flooding,Adjust Reflux Pump P-402 flow rate & purge off-gas line,TECH-03,2026-07-21,false
+TK-101,Feed slurry inlet level drop,Switch to secondary feed intake manifold,TECH-01,2026-07-17,false
 VLV-102a,Inlet vessel level control failure,Calibrated pressure transmitter control loop,ENG-01,2026-07-16,true
-V-101,Gland packing leakage,Replaced Teflon packing rings and lubricated stem,TECH-01,2026-07-15,false
