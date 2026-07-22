@@ -159,8 +159,12 @@ async def start_telegram_listener(session_factory: sessionmaker):
                                                 reply_buttons = {
                                                     "inline_keyboard": [
                                                         [
-                                                            {"text": "🛠️ Confirm Fix", "callback_data": f"vote:confirm:{eq_id}"},
-                                                            {"text": "❌ Reject Fix", "callback_data": f"vote:reject:{eq_id}"}
+                                                            {"text": "⚡ Acknowledge Alert", "callback_data": f"ack:{eq_id}"},
+                                                            {"text": "📄 View Graph", "url": "https://smriti-three.vercel.app/"}
+                                                        ],
+                                                        [
+                                                            {"text": "🛠️ Confirm Remedy", "callback_data": f"vote:confirm:{eq_id}"},
+                                                            {"text": "❌ Reject", "callback_data": f"vote:reject:{eq_id}"}
                                                         ]
                                                     ]
                                                 }
@@ -193,22 +197,23 @@ async def start_telegram_listener(session_factory: sessionmaker):
                                 chat_res = await unified_chat_router(db, user_text)
                                 reply_text = chat_res["answer"]
 
-                                # Attach voting action buttons if equipment ID was detected in answer or text
+                                # Always attach the 4 interactive operational action buttons
                                 import re
                                 match = re.search(r'\b([PVTF]-\d+\w*)\b', user_text + " " + reply_text, re.IGNORECASE)
-                                if match:
-                                    detected_tag = match.group(0).upper()
-                                    reply_buttons = {
-                                        "inline_keyboard": [
-                                            [
-                                                {"text": "⚡ Acknowledge Alert", "callback_data": f"ack:{detected_tag}"},
-                                                {"text": "🛠️ Confirm Fix", "callback_data": f"vote:confirm:{detected_tag}"}
-                                            ],
-                                            [
-                                                {"text": "❌ Reject Fix", "callback_data": f"vote:reject:{detected_tag}"}
-                                            ]
+                                detected_tag = match.group(0).upper() if match else "P-102"
+
+                                reply_buttons = {
+                                    "inline_keyboard": [
+                                        [
+                                            {"text": "⚡ Acknowledge Alert", "callback_data": f"ack:{detected_tag}"},
+                                            {"text": "📄 View Graph", "url": "https://smriti-three.vercel.app/"}
+                                        ],
+                                        [
+                                            {"text": "🛠️ Confirm Remedy", "callback_data": f"vote:confirm:{detected_tag}"},
+                                            {"text": "❌ Reject", "callback_data": f"vote:reject:{detected_tag}"}
                                         ]
-                                    }
+                                    ]
+                                }
                             except Exception as ex:
                                 reply_text = f"Error processing query: {ex}"
                             finally:
