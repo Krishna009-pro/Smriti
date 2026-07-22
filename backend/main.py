@@ -146,18 +146,76 @@ def health_check() -> Dict[str, str]:
     """
     return {"status": "healthy", "service": "smriti-api"}
 
-@app.get("/api/debug/status")
-def debug_status() -> Dict[str, Any]:
-    """Check which API keys are loaded (safe — shows only last 4 chars)."""
+class CreateEquipmentPayload(BaseModel):
+    id: str
+    name: str
+    type: str = "equipment"
+    symptom: str | None = None
+    fix: str | None = None
+
+@app.post("/api/equipment", status_code=status.HTTP_201_CREATED)
+def create_new_equipment(payload: CreateEquipmentPayload, db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """
+    Manually add a new equipment asset, its symptom, and its remedy into the institutional memory graph.
+    """
+    eq_id = payload.id.strip().upper()
+    eq_name = payload.name.strip()
+    
+    # 1. Create Equipment Node
+    existing_node = db.query(KnowledgeNode).filter(KnowledgeNode.id == eq_id).first()
+    if not existing_node:
+        eq_node = KnowledgeNode(
+            id=eq_id,
+            type=payload.type if payload.type in ["equipment", "valve", "tank"] else "equipment",
+            name=eq_name,
+            properties={"created_via": "UI_Form"}
+        )
+        db.add(eq_node)
+    
+    # 2. Create Fix Node and Edge if symptom/fix provided
+    if payload.fix:
+        fix_id = f"FIX-{eq_id}"
+        existing_fix = db.query(KnowledgeNode).filter(KnowledgeNode.id == fix_id).first()
+        if not existing_fix:
+            fix_node = KnowledgeNode(
+                id=fix_id,
+                type="fix",
+                name=payload.fix.strip(),
+                properties={"created_via": "UI_Form"}
+            )
+            db.add(fix_node)
+        
+        # Add edge
+        from backend.services.ingestion_service import _stable_edge_id
+        edge_id = _stable_edge_id(eq_id, fix_id, "has_known_fix", payload.symptom or "")
+        existing_edge = db.query(KnowledgeEdge).filter(KnowledgeEdge.id == edge_id).first()
+        if not existing_edge:
+            edge = KnowledgeEdge(
+                id=edge_id,
+                source_id=eq_id,
+                target_id=fix_id,
+                relation_type="has_known_fix",
+                symptom_description=payload.symptom or "Anomaly detected",
+                confidence=0.5,
+                positive_feedback=1,
+                negative_feedback=0,
+                is_compliance_relevant=True
+            )
+            db.add(edge)
+            
+    db.commit()
+    
+    # Sync embeddings
+    try:
+        from backend.services.rag_service import sync_edge_embeddings
+        sync_edge_embeddings(db)
+    except Exception:
+        pass
+    
     return {
-        "openrouter_key": (
-            f"sk-or-…{settings.openrouter_api_key[-4:]}" if settings.openrouter_api_key else "NOT SET"
-        ),
-        "gemini_key": (
-            f"AIza…{settings.gemini_api_key[-4:]}" if settings.gemini_api_key else "NOT SET"
-        ),
-        "openrouter_model": "google/gemini-2.5-flash",
-        "vision_model": "gemini-3.1-flash-lite (direct Gemini API)",
+        "status": "success",
+        "equipment_id": eq_id,
+        "message": f"Successfully registered {eq_name} ({eq_id}) in institutional memory graph."
     }
 
 

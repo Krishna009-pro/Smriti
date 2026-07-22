@@ -41,6 +41,13 @@ export const api = {
       json<{ ok: boolean; embedded: number }>(r),
     ),
 
+  createEquipment: (payload: { id: string; name: string; type?: string; symptom?: string; fix?: string }) =>
+    fetch(url('/api/equipment'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).then((r) => json<{ status: string; equipment_id: string; message: string }>(r)),
+
   /**
    * POST /api/chat/ask — returns JSON payload string with answer, mode, and retrieved edges.
    */
