@@ -4,7 +4,7 @@ import httpx
 from sqlalchemy.orm import sessionmaker
 from backend.config import settings
 from backend.services.chat_service import unified_chat_router
-from backend.services.confidence import record_feedback
+from backend.services.graph_service import GraphService
 
 async def start_telegram_listener(session_factory: sessionmaker):
     """
@@ -17,19 +17,9 @@ async def start_telegram_listener(session_factory: sessionmaker):
         return
 
     print("[+] Starting interactive Telegram Copilot listener...")
+    # Process all unhandled updates starting from offset 0
     last_update_id = 0
     client = httpx.AsyncClient()
-
-    # Seed initial offset so we don't reply to stale historical messages on restart
-    try:
-        url = f"https://api.telegram.org/bot{bot_token}/getUpdates"
-        resp = await client.get(url, params={"limit": 1}, timeout=5.0)
-        if resp.status_code == 200:
-            updates = resp.json().get("result", [])
-            if updates:
-                last_update_id = updates[-1]["update_id"]
-    except Exception as e:
-        print(f"[-] Initial Telegram offset fetch failed: {e}")
 
     async def send_telegram_reply(chat_id: int, text: str, reply_markup: dict | None = None):
         """Send message safely trying HTML/Markdown or raw text fallback."""
@@ -109,8 +99,9 @@ async def start_telegram_listener(session_factory: sessionmaker):
                                 ).first()
 
                                 if edge:
-                                    res = record_feedback(db, edge.id, outcome="confirmed" if vote_type == "confirm" else "rejected")
-                                    new_conf = res.get("new_confidence", edge.confidence)
+                                    gs = GraphService(db)
+                                    res = gs.record_feedback(edge.id, technician_id="TECH-01", outcome="confirmed" if vote_type == "confirm" else "rejected")
+                                    new_conf = res.get("confidence", edge.confidence)
                                     outcome_str = "Confirmed" if vote_type == "confirm" else "Rejected"
                                     emoji = "🎉" if vote_type == "confirm" else "⚠️"
 
