@@ -1,0 +1,7 @@
+--- SHIFT NOTE: 2026-07-22 18:30 ---
+Location: Area B, Boiler Feed Pump P-103
+Technician: Rajesh
+Observation: High bearing temperature (92°C) and high-frequency axial vibration spike (+28%) observed on Feed Pump P-103.
+Action: Flushed auxiliary lube oil cooler E-103 and replaced mechanical seal gland gasket. Bearing temperature dropped back to 58°C.
+Compliance: PESO Boiler Safety Regulation Standard 14-B.
+---

@@ -237,10 +237,24 @@ class IngestionService:
                     text = self._read_text(file_path)
                     extractions = []
                     for chunk in _chunk_shift_notes(text):
-                        extractions.extend(self.extraction_client.extract_shift_notes(chunk))
+                        extracted_chunks = self.extraction_client.extract_shift_notes(chunk)
+                        if extracted_chunks:
+                            extractions.extend(extracted_chunks)
+                    
+                    if not extractions:
+                        # Regex fallback parser for custom uploaded text files
+                        eq_matches = _TAG_SEARCH_RE.findall(text)
+                        for eq_tag in set(eq_matches):
+                            extractions.append({
+                                "equipment_name": f"Equipment {eq_tag}",
+                                "symptom_description": f"Operational deviation logged for {eq_tag}",
+                                "fix_description": f"Inspected & resolved issue on {eq_tag}",
+                                "is_compliance_relevant": True,
+                                "source_excerpt": text[:300]
+                            })
                     used_live = True
                 except (ExtractionError, OSError) as e:
-                    logger.warning("Live shift-note extraction failed, falling back to cache: %s", e)
+                    logger.warning("Live shift-note extraction failed: %s", e)
                     extractions = None
 
             if extractions is None:

@@ -1,0 +1,7 @@
+--- INCIDENT REPORT: 2026-07-22 20:15 ---
+Location: Gas Compression Unit 2, Compressor C-202
+Technician: Vikram
+Observation: Interstage suction pressure surge (+22%) with severe guide vane acoustic flutter on High-Pressure Compressor C-202.
+Action: Cleared anti-surge bypass valve HCV-202 and recalibrated inlet guide vane actuator positioner. Suction pressure stabilized.
+Compliance: API Standard 617 Machinery Compliance.
+---
